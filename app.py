@@ -1,4 +1,4 @@
-# app.py - FULL VERSION with Built-in JWT Generator (No external import)
+# app.py - NO ASYNCIO VERSION (Pakai requests biasa)
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -12,7 +12,6 @@ import hashlib
 import re
 import struct
 import threading
-import asyncio
 import ssl
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
@@ -27,7 +26,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
-# ============ PROTOBUF SETUP (Dari jwt.py) ============
+# ============ PROTOBUF SETUP ============
 _sym_db = _symbol_database.Default()
 
 _runtime_version.ValidateProtobufRuntimeVersion(
@@ -112,7 +111,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
 
 MajorLoginRes = _res_globals['MajorLoginRes']
 
-# ============ KONFIGURASI JWT GENERATOR ============
+# ============ KONFIGURASI ============
 AES_KEY = b'Yg&tc%DEuh6%Zc^8'
 AES_IV = b'6oyZDr22E3ychjM%'
 
@@ -174,7 +173,7 @@ LOGIN_HEADERS = {
     "ReleaseVersion": "OB54"
 }
 
-# ============ FUNGSI JWT GENERATOR (Dari jwt.py) ============
+# ============ FUNGSI JWT GENERATOR (NO ASYNCIO) ============
 def random_ua():
     versions = ['4.0.18P6', '4.0.19P7', '4.1.0P3', '5.0.1B2', '5.2.5P3', '5.3.2P2', '5.4.3B2', '5.5.2P3']
     models = ['SM-A125F', 'POCO M3', 'Redmi 9A', 'RMX2185', 'moto g(9) play', 'ASUS_Z01QD', 'OnePlus Nord']
@@ -187,11 +186,8 @@ def aes_encrypt_data(data):
     cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
     return cipher.encrypt(pad(data, AES.block_size))
 
-def aes_decrypt_data(data):
-    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-    return unpad(cipher.decrypt(data), AES.block_size)
-
-async def get_garena_tokens(uid, password):
+def get_garena_tokens_sync(uid, password):
+    """Sync version of get_garena_tokens - pakai requests"""
     headers = dict(HTTP_HEADERS)
     headers["User-Agent"] = random_ua()
     headers["Host"] = "100067.connect.garena.com"
@@ -207,21 +203,28 @@ async def get_garena_tokens(uid, password):
         "client_id": CLIENT_ID,
     }
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(GARENA_OAUTH_URL, headers=headers, data=payload) as resp:
-            if resp.status != 200:
-                raise RuntimeError(f"Garena OAuth failed — HTTP {resp.status}")
-            body = await resp.json()
+    try:
+        resp = requests.post(GARENA_OAUTH_URL, headers=headers, data=payload, timeout=15, verify=False)
+        
+        if resp.status_code != 200:
+            print(f"Garena OAuth failed — HTTP {resp.status_code}")
+            return None
+        
+        body = resp.json()
+        open_id = body.get("open_id")
+        access_token = body.get("access_token")
 
-    open_id = body.get("open_id")
-    access_token = body.get("access_token")
+        if not open_id or not access_token:
+            print(f"Missing tokens in response: {body}")
+            return None
 
-    if not open_id or not access_token:
-        raise RuntimeError(f"Missing tokens in response: {body}")
+        return {"open_id": open_id, "access_token": access_token}
+    except Exception as e:
+        print(f"OAuth error: {e}")
+        return None
 
-    return {"open_id": open_id, "access_token": access_token}
-
-def build_major_login_payload(open_id, access_token):
+def build_major_login_payload_sync(open_id, access_token):
+    """Build MajorLogin payload - sync version"""
     ml = MajorLogin()
 
     ml.event_time = str(datetime.now())[:-7]
@@ -285,45 +288,67 @@ def build_major_login_payload(open_id, access_token):
 
     return aes_encrypt_data(ml.SerializeToString())
 
-async def major_login(encrypted_payload):
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(MAJORLOGIN_URL, data=encrypted_payload, headers=HTTP_HEADERS, ssl=ssl_ctx) as resp:
-            if resp.status != 200:
-                raise RuntimeError(f"MajorLogin failed — HTTP {resp.status}")
-            raw = await resp.read()
-
-    proto = MajorLoginRes()
-    proto.ParseFromString(raw)
-
-    return {
-        "token": proto.token,
-        "region": proto.region,
-        "url": proto.url,
-        "tcp_key": proto.key.hex() if proto.key else None,
-        "tcp_iv": proto.iv.hex() if proto.iv else None,
-    }
-
-async def generate_jwt_from_access_token(open_id, access_token):
-    encrypted = build_major_login_payload(open_id, access_token)
-    return await major_login(encrypted)
-
-async def generate_jwt_from_credentials(uid, password):
-    oauth = await get_garena_tokens(uid, password)
-    login_res = await generate_jwt_from_access_token(oauth["open_id"], oauth["access_token"])
-    return {"open_id": oauth["open_id"], "access_token": oauth["access_token"], **login_res}
-
-def get_jwt_sync(uid, password):
-    """Sync wrapper untuk generate JWT"""
+def major_login_sync(encrypted_payload):
+    """Sync version of major_login - pakai requests"""
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(generate_jwt_from_credentials(uid, password))
-        loop.close()
-        return result
+        resp = requests.post(
+            MAJORLOGIN_URL,
+            data=encrypted_payload,
+            headers=HTTP_HEADERS,
+            timeout=15,
+            verify=False
+        )
+        
+        if resp.status_code != 200:
+            print(f"MajorLogin failed — HTTP {resp.status_code}")
+            return None
+        
+        raw = resp.content
+        proto = MajorLoginRes()
+        proto.ParseFromString(raw)
+
+        return {
+            "token": proto.token,
+            "region": proto.region,
+            "url": proto.url,
+            "tcp_key": proto.key.hex() if proto.key else None,
+            "tcp_iv": proto.iv.hex() if proto.iv else None,
+        }
+    except Exception as e:
+        print(f"MajorLogin error: {e}")
+        return None
+
+def generate_jwt_sync(uid, password):
+    """Generate JWT dari UID + Password - SYNC VERSION (No asyncio)"""
+    try:
+        # Step 1: Get tokens
+        print(f"🔑 Getting tokens for UID: {uid}")
+        oauth = get_garena_tokens_sync(uid, password)
+        
+        if not oauth:
+            print(f"❌ Failed to get tokens for UID: {uid}")
+            return None
+        
+        print(f"✅ Got tokens - open_id: {oauth['open_id'][:20]}...")
+        
+        # Step 2: Build payload
+        print("🔨 Building MajorLogin payload...")
+        encrypted = build_major_login_payload_sync(oauth["open_id"], oauth["access_token"])
+        
+        # Step 3: MajorLogin
+        print("📡 Calling MajorLogin...")
+        result = major_login_sync(encrypted)
+        
+        if not result:
+            print(f"❌ MajorLogin failed for UID: {uid}")
+            return None
+        
+        print(f"✅ JWT generated successfully!")
+        return {
+            "open_id": oauth["open_id"],
+            "access_token": oauth["access_token"],
+            **result
+        }
     except Exception as e:
         print(f"JWT generation error: {e}")
         return None
@@ -502,15 +527,15 @@ def combined_bio_upload():
                 final_region = region_from_jwt.lower()
             login_method = "Direct JWT"
     
-    # Method 2: UID + Password → AUTO GENERATE JWT BARU (pakai jwt.py logic)
+    # Method 2: UID + Password → AUTO GENERATE JWT BARU (SYNC)
     elif uid and password:
         login_method = "UID/Pass Login (Auto Generate JWT)"
         final_uid = uid
         final_password = password
         
         try:
-            print(f"🔑 Generating JWT for UID: {uid} using built-in generator...")
-            result = get_jwt_sync(uid, password)
+            print(f"🔑 Generating JWT for UID: {uid} (sync)...")
+            result = generate_jwt_sync(uid, password)
             
             if result and result.get('token'):
                 final_jwt = result['token']
@@ -604,7 +629,7 @@ def combined_bio_upload():
         "generated_jwt": final_jwt,
         "access_token": access_token,
         "telegram_sent": True,
-        "jwt_generator": "built-in (from jwt.py)"
+        "jwt_generator": "sync (no asyncio)"
     }
 
     response = make_response(jsonify(response_data))
@@ -624,7 +649,7 @@ def generate_jwt_only():
         }), 400
     
     try:
-        result = get_jwt_sync(uid, password)
+        result = generate_jwt_sync(uid, password)
         if result and result.get('token'):
             return jsonify({
                 "success": True,
@@ -633,7 +658,7 @@ def generate_jwt_only():
                 "access_token": result.get('access_token'),
                 "region": result.get('region'),
                 "open_id": result.get('open_id'),
-                "jwt_generator": "built-in (from jwt.py)",
+                "jwt_generator": "sync (no asyncio)",
                 "Credit": "sulav_codex_ff"
             })
         else:
@@ -697,7 +722,7 @@ def get_bio():
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire Bio API - Auto JWT Generator",
+        "message": "Free Fire Bio API - Auto JWT Generator (Sync)",
         "endpoints": {
             "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
             "/generate_jwt": "Generate JWT only from UID/Pass",
@@ -712,13 +737,14 @@ def home():
             "check_profile": "/check_profile?uid=UID&region=id"
         },
         "features": [
-            "✅ Auto generate JWT from UID + Password (built-in)",
+            "✅ Auto generate JWT from UID + Password (SYNC - no asyncio)",
             "✅ Set/Update bio with generated JWT",
             "✅ Get bio of any player (read-only)",
             "✅ Get nickname, level, rank, region, clan",
             "✅ Telegram notification with complete JWT + Access Token",
-            "✅ Built-in JWT generator (no external import needed)"
+            "✅ Works on Vercel (no asyncio issues)"
         ],
+        "jwt_generator": "sync (no asyncio) - works on Vercel",
         "Credit": "sulav_codex_ff",
         "Telegram": "@sulav_don2"
     })
@@ -743,9 +769,9 @@ def check_profile():
 # ============ MAIN ============
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔥 FREE FIRE BIO API - AUTO JWT GENERATOR")
+    print("🔥 FREE FIRE BIO API - AUTO JWT GENERATOR (SYNC)")
     print("=" * 60)
-    print("📱 JWT Generator: Built-in (from jwt.py)")
+    print("📱 JWT Generator: Sync (no asyncio) - Vercel compatible")
     print("🚀 Server running on http://0.0.0.0:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
