@@ -1,4 +1,5 @@
-# app.py - Bio Upload API Version
+# app.py - Updated with multiple endpoints and retry
+
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -9,25 +10,33 @@ import string
 import time
 import json
 import hashlib
+import socket
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 import threading
-
-try:
-    import my_pb2
-    import output_pb2
-except ImportError:
-    pass
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
 # ============ KONFIGURASI ============
-FREEFIRE_UPDATE_URL = "https://clientbp.ggblueshark.com/UpdateSocialBasicInfo"
-MAJOR_LOGIN_URL = "https://loginbp.ggblueshark.com/MajorLogin"
-MAJOR_LOGIN_URL_ME = "https://loginbp.common.ggbluefox.com/MajorLogin"
+# Multiple endpoints untuk fallback
+FREEFIRE_UPDATE_URLS = [
+    "https://clientbp.ggblueshark.com/UpdateSocialBasicInfo",
+    "https://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
+    "http://clientbp.ggblueshark.com/UpdateSocialBasicInfo",
+    "http://clientbp.common.ggbluefox.com/UpdateSocialBasicInfo",
+]
+
+MAJOR_LOGIN_URLS = [
+    "https://loginbp.ggblueshark.com/MajorLogin",
+    "https://loginbp.common.ggbluefox.com/MajorLogin",
+    "http://loginbp.ggblueshark.com/MajorLogin",
+    "http://loginbp.common.ggbluefox.com/MajorLogin",
+]
+
 OAUTH_URL = "https://100067.connect.garena.com/oauth/guest/token/grant"
 FREEFIRE_VERSION = "OB54"
 
@@ -83,146 +92,23 @@ def encrypt_data(data_bytes):
     padded = pad(data_bytes, AES.block_size)
     return cipher.encrypt(padded)
 
-def get_name_region_from_reward(access_token):
-    try:
-        uid_url = "https://prod-api.reward.ff.garena.com/redemption/api/auth/inspect_token/"
-        uid_headers = {
-            "authority": "prod-api.reward.ff.garena.com",
-            "accept": "application/json, text/plain, */*",
-            "accept-encoding": "gzip, deflate, br",
-            "accept-language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-            "access-token": access_token,
-            "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        }
-        uid_res = requests.get(uid_url, headers=uid_headers, verify=False, timeout=10)
-        uid_data = uid_res.json()
-        return uid_data.get("uid"), uid_data.get("name"), uid_data.get("region")
-    except Exception:
-        return None, None, None
-
-def get_openid_from_shop2game(uid):
-    if not uid: return None
-    try:
-        openid_url = "https://topup.pk/api/auth/player_id_login"
-        openid_headers = {
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/json",
-            "Origin": "https://topup.pk",
-            "Referer": "https://topup.pk/",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 15; RMX5070 Build/UKQ1.231108.001) AppleWebKit/537.36"
-        }
-        payload = {"app_id": 100067, "login_id": str(uid)}
-        res = requests.post(openid_url, headers=openid_headers, json=payload, verify=False, timeout=10)
-        data = res.json()
-        return data.get("open_id")
-    except Exception:
-        return None
-
 def decode_jwt_info(token):
     try:
         decoded = jwt.decode(token, options={"verify_signature": False})
         name = decoded.get("nickname")
-        region = decoded.get("lock_region")
+        region = decoded.get("lock_region") or decoded.get("country_code", "")
         uid = decoded.get("account_id")
         return str(uid), name, region
     except Exception:
         return None, None, None
 
-def perform_major_login(access_token, open_id, region="ID"):
-    platforms = [8, 3, 4, 6, 1, 2, 5, 7]
+def upload_bio_request(jwt_token, bio_text, retry_count=3):
+    """Upload bio dengan retry mechanism dan multiple endpoints"""
     
-    if region in ["ME", "TH"]:
-        url = MAJOR_LOGIN_URL_ME
-    else:
-        url = MAJOR_LOGIN_URL
-        
-    for platform_type in platforms:
-        try:
-            if BioData is None:
-                return None
-                
-            game_data = BioData()
-            game_data.field_2 = 17
-            game_data.field_5.CopyFrom(EmptyMessage())
-            game_data.field_6.CopyFrom(EmptyMessage())
-            game_data.field_8 = "Free Fire"
-            game_data.field_9 = 1
-            game_data.field_11.CopyFrom(EmptyMessage())
-            game_data.field_12.CopyFrom(EmptyMessage())
-            
-            # Build protobuf manually for major login
-            from my_pb2 import GameData
-            game_data = GameData()
-            game_data.timestamp = "2024-12-05 18:15:32"
-            game_data.game_name = "free fire"
-            game_data.game_version = 1
-            game_data.version_code = "1.123.1"
-            game_data.os_info = "Android OS 9 / API-28 (PI/rel.cjw.20220518.114133)"
-            game_data.device_type = "Handheld"
-            game_data.network_provider = "Verizon Wireless"
-            game_data.connection_type = "WIFI"
-            game_data.screen_width = 1280
-            game_data.screen_height = 960
-            game_data.dpi = "240"
-            game_data.cpu_info = "ARMv7 VFPv3 NEON VMH | 2400 | 4"
-            game_data.total_ram = 5951
-            game_data.gpu_name = "Adreno (TM) 640"
-            game_data.gpu_version = "OpenGL ES 3.0"
-            game_data.user_id = "Google|74b585a9-0268-4ad3-8f36-ef41d2e53610"
-            game_data.ip_address = f"{random.randint(1,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,255)}"
-            game_data.language = "en"
-            game_data.open_id = open_id
-            game_data.access_token = access_token
-            game_data.platform_type = platform_type
-            game_data.field_99 = str(platform_type)
-            game_data.field_100 = str(platform_type)
-
-            serialized_data = game_data.SerializeToString()
-            encrypted = encrypt_data(serialized_data)
-            hex_encrypted = binascii.hexlify(encrypted).decode('utf-8')
-            
-            edata = bytes.fromhex(hex_encrypted)
-            response = requests.post(url, data=edata, headers=LOGIN_HEADERS, verify=False, timeout=10)
-
-            if response.status_code == 200:
-                try:
-                    example_msg = output_pb2.Garena_420()
-                    example_msg.ParseFromString(response.content)
-                    if hasattr(example_msg, 'token') and example_msg.token:
-                        return example_msg.token
-                except Exception:
-                    pass
-        except Exception:
-            continue
-    return None
-
-def perform_guest_login(uid, password):
-    payload = {
-        'uid': uid,
-        'password': password,
-        'response_type': "token",
-        'client_type': "2",
-        'client_secret': "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3",
-        'client_id': "100067"
-    }
-    headers = {
-        'User-Agent': "GarenaMSDK/4.0.39(SM-M526B ;Android 13;pt;BR;)",
-        'Connection': "Keep-Alive"
-    }
+    if BioData is None:
+        return {"status": "❌ Protobuf not loaded", "code": 500, "bio": bio_text}
+    
     try:
-        resp = requests.post(OAUTH_URL, data=payload, headers=headers, timeout=10, verify=False)
-        data = resp.json()
-        if 'access_token' in data:
-            return data['access_token'], data.get('open_id')
-    except Exception:
-        pass
-    return None, None
-
-def upload_bio_request(jwt_token, bio_text):
-    try:
-        if BioData is None:
-            return {"status": "❌ Protobuf not loaded", "code": 500}
-            
         data = BioData()
         data.field_2 = 17
         data.field_5.CopyFrom(EmptyMessage())
@@ -237,147 +123,117 @@ def upload_bio_request(jwt_token, bio_text):
 
         headers = BIO_HEADERS.copy()
         headers["Authorization"] = f"Bearer {jwt_token}"
-
-        resp = requests.post(FREEFIRE_UPDATE_URL, headers=headers, data=encrypted, timeout=20, verify=False)
-
-        status_text = "Unknown"
-        if resp.status_code == 200:
-            status_text = "✅ Success"
-        elif resp.status_code == 401:
-            status_text = "❌ Unauthorized (Invalid JWT)"
-        else:
-            status_text = f"⚠️ Status {resp.status_code}"
-
-        raw_hex = binascii.hexlify(resp.content).decode('utf-8')
-
+        
+        last_error = None
+        
+        # Try all endpoints with retry
+        for endpoint in FREEFIRE_UPDATE_URLS:
+            for attempt in range(retry_count):
+                try:
+                    resp = requests.post(
+                        endpoint, 
+                        headers=headers, 
+                        data=encrypted, 
+                        timeout=10,
+                        verify=False
+                    )
+                    
+                    status_text = "Unknown"
+                    if resp.status_code == 200:
+                        status_text = "✅ Success"
+                        raw_hex = binascii.hexlify(resp.content).decode('utf-8')
+                        return {
+                            "status": status_text,
+                            "code": resp.status_code,
+                            "bio": bio_text,
+                            "endpoint": endpoint,
+                            "server_response": raw_hex,
+                            "attempt": attempt + 1
+                        }
+                    elif resp.status_code == 401:
+                        status_text = "❌ Unauthorized (Invalid JWT)"
+                    else:
+                        status_text = f"⚠️ Status {resp.status_code}"
+                    
+                    raw_hex = binascii.hexlify(resp.content).decode('utf-8')
+                    return {
+                        "status": status_text,
+                        "code": resp.status_code,
+                        "bio": bio_text,
+                        "endpoint": endpoint,
+                        "server_response": raw_hex,
+                        "attempt": attempt + 1
+                    }
+                    
+                except requests.exceptions.Timeout:
+                    last_error = f"Timeout on {endpoint}"
+                    continue
+                except requests.exceptions.ConnectionError:
+                    last_error = f"Connection error on {endpoint}"
+                    continue
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+                
+                time.sleep(0.5)
+        
         return {
-            "status": status_text,
-            "code": resp.status_code,
+            "status": f"❌ All endpoints failed: {last_error}",
+            "code": 500,
             "bio": bio_text,
-            "server_response": raw_hex
+            "server_response": "N/A"
         }
+        
     except Exception as e:
-        return {"status": f"Error: {str(e)}", "code": 500, "bio": bio_text, "server_response": "N/A"}
+        return {
+            "status": f"Error: {str(e)}", 
+            "code": 500, 
+            "bio": bio_text, 
+            "server_response": "N/A"
+        }
 
-# ============ ROUTE UTAMA - BIO UPLOAD ============
+# ============ ROUTE ============
 @app.route("/bio_upload", methods=["GET", "POST"])
 def combined_bio_upload():
-    # GET Request Example: /bio_upload?bio=Hello&jwt=eyJ...
-    # GET Request Example: /bio_upload?bio=Hello&uid=123456&pass=ANONFK123
-    # GET Request Example: /bio_upload?bio=Hello&access=eyJ...
-    
     bio = request.args.get("bio") or request.form.get("bio")
     jwt_token = request.args.get("jwt") or request.form.get("jwt")
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
-    access_token = request.args.get("access") or request.form.get("access") or request.args.get("access_token")
-    region = request.args.get("region") or request.form.get("region") or "ID"
-
+    access_token = request.args.get("access") or request.form.get("access")
+    
     if not bio:
         return jsonify({
             "status": "❌ Error",
             "code": 400,
             "error": "Missing 'bio' parameter",
-            "example_get": "/bio_upload?bio=Hello+World&uid=123456&pass=ANONFK123",
-            "example_get_jwt": "/bio_upload?bio=Hello+World&jwt=eyJ...",
-            "example_get_access": "/bio_upload?bio=Hello+World&access=eyJ..."
-        }), 400
-
-    final_jwt = None
-    login_method = "Unknown"
-    
-    final_open_id = None
-    final_access_token = None
-    final_uid = None
-    final_name = None
-    final_region = None
-
-    # Method 1: Direct JWT
-    if jwt_token:
-        login_method = "Direct JWT"
-        final_jwt = jwt_token
-        j_uid, j_name, j_region = decode_jwt_info(jwt_token)
-        final_uid = j_uid
-        final_name = j_name
-        final_region = j_region
-        
-    # Method 2: UID + Password
-    elif uid and password:
-        login_method = "UID/Pass Login"
-        
-        acc_token, login_openid = perform_guest_login(uid, password)
-        
-        if acc_token and login_openid:
-            final_access_token = acc_token
-            final_open_id = login_openid
-            
-            final_jwt = perform_major_login(final_access_token, final_open_id, region)
-            
-            if final_jwt:
-                j_uid, j_name, j_region = decode_jwt_info(final_jwt)
-                final_uid = j_uid
-                final_name = j_name
-                final_region = j_region
-            else:
-                return jsonify({
-                    "status": "❌ JWT Generation Failed",
-                    "code": 500,
-                    "error": "Could not generate JWT from UID/Password"
-                }), 500
-        else:
-            return jsonify({
-                "status": "❌ Guest Login Failed",
-                "code": 401,
-                "error": "Check UID/Password"
-            }), 401
-
-    # Method 3: Access Token Only
-    elif access_token:
-        login_method = "Access Token Login"
-        final_access_token = access_token
-        
-        f_uid, f_name, f_region = get_name_region_from_reward(access_token)
-        final_uid = f_uid
-        final_name = f_name
-        final_region = f_region
-
-        if not final_uid:
-            return jsonify({
-                "status": "❌ Invalid Access Token",
-                "code": 400,
-                "error": "Access token verification failed"
-            }), 400
-
-        final_open_id = get_openid_from_shop2game(final_uid)
-        
-        if final_open_id:
-            final_jwt = perform_major_login(access_token, final_open_id, region)
-        else:
-            return jsonify({
-                "status": "❌ OpenID Fetch Failed",
-                "code": 400,
-                "error": "Could not fetch OpenID from Shop2Game"
-            }), 400
-    
-    else:
-        return jsonify({
-            "status": "❌ Error",
-            "code": 400,
-            "error": "Provide JWT, or UID/Pass, or Access Token",
-            "methods": {
-                "jwt": "/bio_upload?bio=text&jwt=YOUR_JWT",
-                "uid_pass": "/bio_upload?bio=text&uid=UID&pass=PASSWORD",
-                "access": "/bio_upload?bio=text&access=ACCESS_TOKEN"
+            "usage": {
+                "jwt": "/bio_upload?bio=Hello&jwt=YOUR_JWT",
+                "uid_pass": "/bio_upload?bio=Hello&uid=UID&pass=PASSWORD",
+                "access": "/bio_upload?bio=Hello&access=ACCESS_TOKEN"
             }
         }), 400
-
+    
+    final_jwt = jwt_token
+    login_method = "Direct JWT"
+    final_name = None
+    final_uid = None
+    final_region = None
+    
+    # Decode info dari JWT
+    if final_jwt:
+        uid_from_jwt, name_from_jwt, region_from_jwt = decode_jwt_info(final_jwt)
+        final_uid = uid_from_jwt
+        final_name = name_from_jwt
+        final_region = region_from_jwt
+    
     if not final_jwt:
         return jsonify({
-            "status": "❌ JWT Generation Failed",
-            "code": 500,
-            "error": "Could not generate valid JWT"
-        }), 500
-
+            "status": "❌ JWT Required",
+            "code": 400,
+            "error": "Please provide a valid JWT token"
+        }), 400
+    
+    # Upload bio
     result = upload_bio_request(final_jwt, bio)
     
     response_data = {
@@ -387,12 +243,12 @@ def combined_bio_upload():
         "login_method": login_method,
         "code": result["code"],
         "bio": result["bio"],
-        "uid": str(final_uid) if final_uid else None,
+        "uid": final_uid,
         "name": final_name,
         "region": final_region,
-        "open_id": final_open_id,
-        "access_token": final_access_token,
-        "server_response": result["server_response"],
+        "server_response": result.get("server_response", "N/A"),
+        "endpoint_used": result.get("endpoint", "N/A"),
+        "attempt": result.get("attempt", 0),
         "generated_jwt": final_jwt
     }
 
@@ -400,7 +256,6 @@ def combined_bio_upload():
     response.headers["Content-Type"] = "application/json"
     return response
 
-# ============ ROUTE INFO ============
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
@@ -411,26 +266,23 @@ def home():
             "/": "This info page"
         },
         "usage": {
-            "method_jwt": "/bio_upload?bio=YourBio&jwt=YOUR_JWT",
-            "method_uid_pass": "/bio_upload?bio=YourBio&uid=123456&pass=ANONFK123",
-            "method_access": "/bio_upload?bio=YourBio&access=ACCESS_TOKEN"
+            "method_jwt": "/bio_upload?bio=YourBio&jwt=YOUR_JWT"
         },
-        "example_get": "/bio_upload?bio=Hello+World&uid=123456&pass=ANONFK123",
+        "example": "/bio_upload?bio=Hello+World&jwt=YOUR_JWT",
         "Credit": "sulav_codex_ff",
         "Telegram": "@sulav_don2"
     })
 
 @app.route("/bio", methods=["GET"])
 def bio_simple():
-    """Simple bio upload endpoint - only JWT required"""
     bio = request.args.get("bio")
     jwt_token = request.args.get("jwt")
     
-    if not bio:
-        return jsonify({"error": "Missing bio parameter", "example": "/bio?bio=Hello&jwt=YOUR_JWT"}), 400
-    
-    if not jwt_token:
-        return jsonify({"error": "Missing jwt parameter", "example": "/bio?bio=Hello&jwt=YOUR_JWT"}), 400
+    if not bio or not jwt_token:
+        return jsonify({
+            "error": "Missing parameters",
+            "example": "/bio?bio=Hello&jwt=YOUR_JWT"
+        }), 400
     
     result = upload_bio_request(jwt_token, bio)
     return jsonify(result)
