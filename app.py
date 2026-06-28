@@ -1,6 +1,4 @@
-buat full
 
-# app.py - FULL TOKEN VERSION
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -1012,6 +1010,3 @@ if __name__ == "__main__":
     print("🚀 Server running on http://0.0.0.0:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
-
-
-bener bener full
