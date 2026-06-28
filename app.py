@@ -850,6 +850,127 @@ def check_profile():
             "error": "Profile not found on any server"
         }), 404
 
+@app.route("/get_bio", methods=["GET"])
+def get_bio():
+    """Endpoint untuk mendapatkan bio orang lain (read-only)"""
+    uid = request.args.get("uid")
+    jwt_token = request.args.get("jwt")  # Opsional, untuk cek profile via protobuf
+    region = request.args.get("region", "id")
+    
+    if not uid:
+        return jsonify({
+            "success": False,
+            "error": "Missing 'uid' parameter",
+            "usage": "/get_bio?uid=16203030000&region=id"
+        }), 400
+    
+    try:
+        # METHOD 1: Coba dari API ff.ggbluewhale.store (cepat)
+        url = f"https://ff.ggbluewhale.store/api/data?region={region}&uid={uid}&key=kenn"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('basicInfo'):
+                basic = data['basicInfo']
+                social = data.get('socialInfo', {})
+                clan = data.get('clanBasicInfo', {})
+                return jsonify({
+                    "success": True,
+                    "action": "GET BIO",
+                    "method": "API ff.ggbluewhale.store",
+                    "data": {
+                        "uid": basic.get('accountId', uid),
+                        "name": basic.get('nickname', 'Unknown'),
+                        "level": basic.get('level', '?'),
+                        "rank": basic.get('rank', '?'),
+                        "region": basic.get('region', region.upper()),
+                        "bio": social.get('signature', ''),
+                        "clan": clan.get('clanName', 'N/A'),
+                        "likes": basic.get('likes', 0)
+                    },
+                    "Credit": "sulav_codex_ff",
+                    "Join For More": "Telegram: @sulav_don2"
+                })
+        
+        # METHOD 2: Jika API gagal, coba pakai protobuf (butuh JWT)
+        if jwt_token:
+            profile = check_profile_with_jwt(uid, jwt_token, region.upper())
+            if profile:
+                return jsonify({
+                    "success": True,
+                    "action": "GET BIO",
+                    "method": "protobuf (search.py)",
+                    "data": {
+                        "uid": profile.get('uid'),
+                        "name": profile.get('name'),
+                        "level": profile.get('level'),
+                        "likes": profile.get('likes'),
+                        "region": profile.get('server'),
+                        "guild": profile.get('guild'),
+                        "bio": "N/A (protobuf tidak menyimpan bio)"
+                    },
+                    "Credit": "sulav_codex_ff",
+                    "Join For More": "Telegram: @sulav_don2"
+                })
+        
+        # METHOD 3: Coba dari endpoint lain (alternatif)
+        alt_urls = [
+            f"https://clientbp.ggpolarbear.com/GetPlayerPersonalShow",
+            f"https://client.ind.freefiremobile.com/GetPlayerPersonalShow",
+            f"https://client.us.freefiremobile.com/GetPlayerPersonalShow"
+        ]
+        
+        for alt_url in alt_urls:
+            try:
+                headers = {
+                    'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
+                    'Content-Type': "application/x-www-form-urlencoded",
+                }
+                if jwt_token:
+                    headers['Authorization'] = f"Bearer {jwt_token}"
+                
+                # Encrypt UID pakai protobuf
+                encrypted = enc_uid(str(uid))
+                if encrypted:
+                    edata = bytes.fromhex(encrypted)
+                    resp = requests.post(alt_url, data=edata, headers=headers, timeout=10, verify=False)
+                    if resp.status_code == 200:
+                        parsed = parse_protobuf_response(resp.content)
+                        if parsed and parsed.get('AccountInfo'):
+                            account_info = parsed['AccountInfo']
+                            return jsonify({
+                                "success": True,
+                                "action": "GET BIO",
+                                "method": f"protobuf ({alt_url.split('/')[2]})",
+                                "data": {
+                                    "uid": uid,
+                                    "name": account_info.get('PlayerNickname', 'Unknown'),
+                                    "level": account_info.get('PlayerLevel', '?'),
+                                    "likes": account_info.get('Likes', 0),
+                                    "region": region.upper(),
+                                    "guild": account_info.get('GuildName', 'N/A'),
+                                    "bio": "N/A (protobuf)"
+                                },
+                                "Credit": "sulav_codex_ff"
+                            })
+            except:
+                continue
+        
+        return jsonify({
+            "success": False,
+            "error": "Profile not found on any server",
+            "uid": uid,
+            "tried_methods": ["API ff.ggbluewhale", "protobuf with JWT", "direct protobuf"]
+        }), 404
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "uid": uid
+        }), 500
+
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
